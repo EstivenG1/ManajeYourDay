@@ -6,6 +6,7 @@ import '../finanzas/finanzas_screen.dart';
 import '../tareas/tareas_screen.dart';
 import '../reportes/reportes_screen.dart';
 import '../perfil/perfil_screen.dart';
+import '../historial/historial_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -100,6 +101,17 @@ class _HomeShellState extends State<HomeShell> {
                     MaterialPageRoute(builder: (_) => const PerfilScreen()),
                   );
                   _cargarPerfil(); // refresca por si cambió el nombre/foto
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.history, color: AppColors.gold),
+                title: Text('Historial de actividad', style: AppTypography.itemTitle),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const HistorialScreen()),
+                  );
                 },
               ),
               ListTile(

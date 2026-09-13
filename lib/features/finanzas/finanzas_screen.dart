@@ -3,6 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
 import 'transaction_form_screen.dart';
+import '../metas/metas_screen.dart';
 
 class FinanzasScreen extends StatefulWidget {
   const FinanzasScreen({super.key});
@@ -104,6 +105,8 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                 padding: const EdgeInsets.all(20),
                 children: [
                   _tarjetaBalance(finanzas),
+                  const SizedBox(height: 14),
+                  _botonMetas(),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -140,6 +143,35 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _botonMetas() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.xl2),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const MetasScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.goldSoftBg,
+          borderRadius: BorderRadius.circular(AppRadii.xl2),
+          border: Border.all(color: AppColors.goldBorder),
+        ),
+        child: Row(
+          children: [
+            const Text('🎯', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('Metas de ahorro',
+                  style: AppTypography.itemTitle.copyWith(color: AppColors.goldDeep)),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.goldDeep, size: 20),
+          ],
+        ),
+      ),
     );
   }
 
