@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
+import '../../core/services/notification_service.dart';
 
 class TransactionFormScreen extends StatefulWidget {
   final String tipoInicial; // 'ingreso' o 'gasto'
@@ -110,6 +111,17 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
       if (descripcion.isNotEmpty) {
         await SugerenciasService.registrarUso('gasto_descripcion', descripcion);
+      }
+
+      if (_tipo == 'gasto' && _categoriaId != null) {
+        final nombreCategoria =
+            _categorias.firstWhere((c) => c['id'] == _categoriaId, orElse: () => {})['nombre'];
+        if (nombreCategoria != null) {
+          await NotificationService.revisarPresupuesto(
+            categoriaId: _categoriaId!,
+            nombreCategoria: nombreCategoria,
+          );
+        }
       }
 
       if (mounted) Navigator.pop(context, true);

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/services/notification_service.dart';
 import 'task_form_screen.dart';
 
 class TareasScreen extends StatefulWidget {
@@ -64,6 +65,20 @@ class _TareasScreenState extends State<TareasScreen> {
       'estado': nuevoEstado,
       'completado_en': tarea['completado_en'],
     }).eq('id', tarea['id']);
+
+    if (nuevoEstado == 'completada') {
+      // Ya no hace falta recordarle una tarea que ya completó.
+      await NotificationService.cancelarRecordatorioTarea(tarea['id']);
+    } else {
+      // Se marcó de nuevo como pendiente: si la fecha límite sigue en
+      // el futuro, se vuelve a programar el recordatorio.
+      final fechaLimite = DateTime.parse(tarea['fecha_limite']);
+      await NotificationService.programarRecordatorioTarea(
+        tareaId: tarea['id'],
+        titulo: tarea['titulo'],
+        fechaLimite: fechaLimite,
+      );
+    }
   }
 
   Future<void> _eliminarTarea(Map<String, dynamic> tarea) async {
@@ -83,6 +98,7 @@ class _TareasScreenState extends State<TareasScreen> {
     );
     if (confirmar == true) {
       await supabase.from('tareas').delete().eq('id', tarea['id']);
+      await NotificationService.cancelarRecordatorioTarea(tarea['id']);
       _cargarTareas();
     }
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
+import '../../core/services/notification_service.dart';
 
 class TaskFormScreen extends StatefulWidget {
   final Map<String, dynamic>? tarea;
@@ -102,14 +103,30 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         'prioridad': _prioridad,
       };
 
+      String tareaId;
       if (_editando) {
-        await supabase.from('tareas').update(datos).eq('id', widget.tarea!['id']);
+        tareaId = widget.tarea!['id'];
+        await supabase.from('tareas').update(datos).eq('id', tareaId);
       } else {
-        await supabase.from('tareas').insert({...datos, 'usuario_id': userId, 'estado': 'pendiente'});
+        final insertado = await supabase
+            .from('tareas')
+            .insert({...datos, 'usuario_id': userId, 'estado': 'pendiente'})
+            .select('id')
+            .single();
+        tareaId = insertado['id'];
       }
 
       await SugerenciasService.registrarUso('tarea_titulo', titulo);
       await SugerenciasService.registrarUso('tarea_hora', _formatearHora(_hora));
+
+      // Reprograma el recordatorio (si se edita, primero se cancela el
+      // anterior para no dejar uno viejo con la fecha equivocada).
+      await NotificationService.cancelarRecordatorioTarea(tareaId);
+      await NotificationService.programarRecordatorioTarea(
+        tareaId: tareaId,
+        titulo: titulo,
+        fechaLimite: fechaLimite,
+      );
 
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
