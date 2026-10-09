@@ -7,6 +7,7 @@ import '../tareas/tareas_screen.dart';
 import '../reportes/reportes_screen.dart';
 import '../perfil/perfil_screen.dart';
 import '../historial/historial_screen.dart';
+import '../logros/logros_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -111,6 +112,17 @@ class _HomeShellState extends State<HomeShell> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const HistorialScreen()),
+                  );
+                },
+              ),
+               ListTile(
+                leading: const Icon(Icons.emoji_events_outlined, color: AppColors.gold),
+                title: Text('Mis logros', style: AppTypography.itemTitle),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const LogrosScreen()),
                   );
                 },
               ),

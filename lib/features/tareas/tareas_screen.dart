@@ -3,6 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/notification_service.dart';
 import 'task_form_screen.dart';
+import '../../core/services/recurrencia_service.dart';
 
 class TareasScreen extends StatefulWidget {
   const TareasScreen({super.key});
@@ -69,6 +70,15 @@ class _TareasScreenState extends State<TareasScreen> {
     if (nuevoEstado == 'completada') {
       // Ya no hace falta recordarle una tarea que ya completó.
       await NotificationService.cancelarRecordatorioTarea(tarea['id']);
+
+      // Si era recurrente, se crea automáticamente la siguiente vez.
+      final creada = await RecurrenciaService.generarSiguienteSiAplica(tarea);
+      if (creada && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🔁 Se programó la próxima repetición')),
+        );
+        _cargarTareas();
+      }
     } else {
       // Se marcó de nuevo como pendiente: si la fecha límite sigue en
       // el futuro, se vuelve a programar el recordatorio.
@@ -257,6 +267,10 @@ class _TareasScreenState extends State<TareasScreen> {
                       const SizedBox(width: 4),
                       Text((tarea['prioridad'] ?? '').toString().toUpperCase(),
                           style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+                           if ((tarea['recurrencia'] ?? 'ninguna') != 'ninguna') ...[
+                        const SizedBox(width: 8),
+                        const Icon(Icons.repeat, size: 13, color: AppColors.gold),
+                      ],
                     ],
                   ),
                 ],

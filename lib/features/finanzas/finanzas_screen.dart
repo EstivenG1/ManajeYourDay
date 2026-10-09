@@ -4,6 +4,7 @@ import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
 import 'transaction_form_screen.dart';
 import '../metas/metas_screen.dart';
+import '../presupuestos/presupuestos_screen.dart';
 
 class FinanzasScreen extends StatefulWidget {
   const FinanzasScreen({super.key});
@@ -107,6 +108,8 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                   _tarjetaBalance(finanzas),
                   const SizedBox(height: 14),
                   _botonMetas(),
+                  const SizedBox(height: 10),
+                  _botonPresupuestos(),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -169,6 +172,35 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                   style: AppTypography.itemTitle.copyWith(color: AppColors.goldDeep)),
             ),
             const Icon(Icons.chevron_right, color: AppColors.goldDeep, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _botonPresupuestos() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.xl2),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const PresupuestosScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.redChipBg,
+          borderRadius: BorderRadius.circular(AppRadii.xl2),
+          border: Border.all(color: AppColors.redChipBorder),
+        ),
+        child: Row(
+          children: [
+            const Text('📊', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text('Presupuestos',
+                  style: AppTypography.itemTitle.copyWith(color: AppColors.red)),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.red, size: 20),
           ],
         ),
       ),

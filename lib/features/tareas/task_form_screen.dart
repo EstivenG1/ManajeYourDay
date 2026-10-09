@@ -3,6 +3,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/recurrencia_service.dart';
 
 class TaskFormScreen extends StatefulWidget {
   final Map<String, dynamic>? tarea;
@@ -20,6 +21,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   late DateTime _fecha;
   late TimeOfDay _hora;
   String _prioridad = 'media';
+  String _recurrencia = 'ninguna';
   bool _guardando = true;
 
   List<String> _sugerenciasTitulo = [];
@@ -38,6 +40,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       _hora = TimeOfDay(hour: fechaLimite.hour, minute: fechaLimite.minute);
       _descripcionCtrl.text = tarea['descripcion'] ?? '';
       _prioridad = tarea['prioridad'] ?? 'media';
+      _recurrencia = tarea['recurrencia'] ?? 'ninguna';
     } else {
       final ahora = DateTime.now();
       _fecha = ahora;
@@ -101,6 +104,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         'descripcion': _descripcionCtrl.text.trim().isEmpty ? null : _descripcionCtrl.text.trim(),
         'fecha_limite': fechaLimite.toIso8601String(),
         'prioridad': _prioridad,
+        'recurrencia': _recurrencia,
       };
 
       String tareaId;
@@ -224,6 +228,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 Text('PRIORIDAD', style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
                 _selectorPrioridad(tema),
+                const SizedBox(height: 22),
+
+                Text('¿SE REPITE?', style: AppTypography.sectionLabel),
+                const SizedBox(height: 8),
+                _selectorRecurrencia(),
                 const SizedBox(height: 32),
 
                 SizedBox(
@@ -329,6 +338,38 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
           ],
         ),
       ),
+    );
+  }
+
+    Widget _selectorRecurrencia() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: RecurrenciaService.etiquetas.entries.map((e) {
+        final activo = _recurrencia == e.key;
+        return GestureDetector(
+          onTap: () => setState(() => _recurrencia = e.key),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+            decoration: BoxDecoration(
+              color: activo ? AppColors.goldChipBg : AppColors.surface,
+              borderRadius: BorderRadius.circular(AppRadii.xl),
+              border: Border.all(
+                color: activo ? AppColors.gold : AppColors.borderSoft,
+                width: AppRadii.borderWidth,
+              ),
+            ),
+            child: Text(
+              e.value,
+              style: TextStyle(
+                color: activo ? AppColors.goldDeep : AppColors.textSecondary,
+                fontWeight: activo ? FontWeight.w700 : FontWeight.w500,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 

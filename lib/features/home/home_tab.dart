@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import 'boton_whatsapp.dart'; 
 
 class HomeTab extends StatefulWidget {
   final String? nombre;
@@ -157,10 +158,13 @@ class _HomeTabState extends State<HomeTab> {
               _datoBalance('Mov.', '$_totalMovimientos'),
             ],
           ),
+          const SizedBox(height: 16),
+          const BotonWhatsapp(),
         ],
       ),
     );
   }
+
 
   Widget _datoBalance(String label, String valor) {
     return Expanded(
@@ -234,6 +238,9 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+
+  
+
   Widget _seccionConsejosIA(List<String> consejos) {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -265,3 +272,7 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 }
+
+
+
+

@@ -4,6 +4,8 @@ import 'package:storage_client/storage_client.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/services/cuenta_service.dart';
+import '../splash/welcome_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -260,34 +262,116 @@ class _PerfilScreenState extends State<PerfilScreen> {
       }
     }
   }
+  
+// ============================================================
+// ELIMINAR CUENTA
+// ============================================================
 
-  // ============================================================
-  // ELIMINAR CUENTA
-  // ============================================================
+void _confirmarEliminarCuenta() {
+  final confirmacionCtrl = TextEditingController();
+  var puedeEliminar = false;
+  var eliminando = false;
 
-  void _confirmarEliminarCuenta() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (dialogContext) => StatefulBuilder(
+      builder: (dialogContext, setDialogState) => AlertDialog(
         title: const Text('Eliminar cuenta'),
-        content: const Text(
-          'Por seguridad, eliminar una cuenta definitivamente requiere '
-          'un proceso en el servidor que todavía no está construido '
-          '(para evitar borrados accidentales o no autorizados). '
-          'Cuando esté listo, desde aquí mismo podrás solicitarlo. '
-          'Por ahora, si necesitas eliminar tu cuenta, contacta al '
-          'equipo de MYD.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Esta acción es permanente. Se borrarán tu cuenta, tus '
+              'tareas, movimientos, metas de ahorro y todo tu historial. '
+              'No se puede deshacer.\n\nEscribe ELIMINAR para confirmar:',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmacionCtrl,
+              decoration: const InputDecoration(
+                hintText: 'ELIMINAR',
+              ),
+              onChanged: (v) => setDialogState(
+                () => puedeEliminar =
+                    v.trim().toUpperCase() == 'ELIMINAR',
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendido'),
+            onPressed: eliminando
+                ? null
+                : () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: (!puedeEliminar || eliminando)
+                ? null
+                : () async {
+                    // Indica que la eliminación está en proceso.
+                    setDialogState(() => eliminando = true);
+
+                    try {
+                      // Inicia la eliminación definitiva de la cuenta.
+                      await CuentaService.eliminarCuentaDefinitivamente();
+
+                      if (!mounted) return;
+
+                      // Cierra el diálogo de confirmación.
+                      Navigator.pop(dialogContext);
+
+                      // Reemplaza toda la navegación actual por la
+                      // pantalla de bienvenida.
+                      //
+                      // Esto evita que el usuario permanezca dentro
+                      // de HomeShell después de eliminar su cuenta.
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(
+                          builder: (_) => const WelcomeScreen(),
+                        ),
+                        (route) => false,
+                      );
+                    } catch (e) {
+                      // Si ocurre un error, permitimos volver a intentar.
+                      setDialogState(() => eliminando = false);
+
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              'No se pudo eliminar: $e',
+                            ),
+                          ),
+                        );
+                      }
+                    }
+                  },
+            child: eliminando
+                ? const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text(
+                    'Eliminar definitivamente',
+                    style: TextStyle(
+                      color: AppColors.red,
+                    ),
+                  ),
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
+
+ 
   // ============================================================
   // BUILD
   // ============================================================

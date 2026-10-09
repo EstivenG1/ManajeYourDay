@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/auth/auth_errors.dart';
+import '../../core/services/google_auth_service.dart';
 
 enum AuthTab { login, register }
 
@@ -85,6 +86,20 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(mensajeErrorAuth(e))));
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
+  }
+  Future<void> _iniciarConGoogle() async {
+    setState(() => _cargando = true);
+    try {
+      await GoogleAuthService.iniciarSesion();
+      if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('No se pudo iniciar con Google: $e')));
+      }
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
@@ -192,7 +207,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             child: _botonProveedor(
                               emoji: '🌐',
                               texto: 'Google',
-                              onTap: () => _proximamente('Google'),
+                              onTap: _iniciarConGoogle,
                             ),
                           ),
                           const SizedBox(width: 12),
