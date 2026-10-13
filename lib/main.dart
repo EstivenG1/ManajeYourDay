@@ -3,8 +3,7 @@ import 'core/supabase/supabase_config.dart';
 import 'core/services/notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/auth/auth_gate.dart';
-import 'features/auth/login_screen.dart';
-import 'features/auth/register_screen.dart';
+import 'features/auth/auth_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,8 +24,8 @@ class MydApp extends StatelessWidget {
       themeMode: ThemeMode.light,
       home: const AuthGate(),
       routes: {
-        '/login': (_) => const LoginScreen(),
-        '/register': (_) => const RegisterScreen(),
+        '/login': (_) => const AuthScreen(initialTab: AuthTab.login),
+        '/register': (_) => const AuthScreen(initialTab: AuthTab.register),
       },
     );
   }
