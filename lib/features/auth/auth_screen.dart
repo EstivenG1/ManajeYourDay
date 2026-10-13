@@ -329,43 +329,68 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _encabezado() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 28),
-      decoration: BoxDecoration(
+      height: 160,
+      padding: const EdgeInsets.only(bottom: 20, top: 18),
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
-          colors: [
-            AppColors.goldChipBg,
-            AppColors.goldBorder.withValues(alpha: 0.6),
-          ],
+          colors: AppColors.bgSplashGradient,
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
       ),
-      child: Column(
+      child: Stack(
+        alignment: Alignment.bottomCenter,
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              color: AppColors.gold,
-              borderRadius: BorderRadius.circular(AppRadii.xl2),
-            ),
-            alignment: Alignment.center,
-            child: const Text(
-              'M',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.w800,
+          Positioned(
+            top: -58,
+            right: -28,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: AppColors.gold.withValues(alpha: 0.28),
+                  width: 1.5,
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            'MANEJA TU DÍA',
-            style: AppTypography.sectionLabel.copyWith(
-              color: AppColors.goldDeep,
-              fontSize: 12,
-            ),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  gradient: AppColors.goldGradient,
+                  borderRadius: BorderRadius.circular(AppRadii.xl2),
+                  boxShadow: AppColors.sombraPremium(
+                    AppColors.gold,
+                    blur: 16,
+                    dy: 5,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'M',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 9),
+              Text(
+                'MANEJA TU DÍA',
+                style: AppTypography.sectionLabel.copyWith(
+                  color: AppColors.goldDeep,
+                  fontSize: 12,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ],
           ),
         ],
       ),
