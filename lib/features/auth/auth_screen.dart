@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/auth/auth_errors.dart';
+import '../../core/services/google_auth_service.dart';
 
 enum AuthTab { login, register }
 
@@ -90,10 +92,21 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
-  void _proximamente(String proveedor) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Inicio con $proveedor muy pronto ✨')),
-    );
+  Future<void> _iniciarConGoogle() async {
+    if (_cargando) return;
+    setState(() => _cargando = true);
+
+    try {
+      final inicioExitoso = await GoogleAuthService.iniciarSesion();
+      if (!mounted || !inicioExitoso) return;
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(mensajeErrorAuth(e))));
+    } finally {
+      if (mounted) setState(() => _cargando = false);
+    }
   }
 
   @override
@@ -119,12 +132,17 @@ class _AuthScreenState extends State<AuthScreen> {
                       TextFormField(
                         controller: _correoCtrl,
                         keyboardType: TextInputType.emailAddress,
-                        decoration:
-                            const InputDecoration(hintText: 'tu@email.com'),
+                        decoration: const InputDecoration(
+                          hintText: 'tu@email.com',
+                        ),
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty) return 'Ingresa tu correo';
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Ingresa tu correo';
+                          }
                           final regex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
-                          if (!regex.hasMatch(v.trim())) return 'Correo no válido';
+                          if (!regex.hasMatch(v.trim())) {
+                            return 'Correo no válido';
+                          }
                           return null;
                         },
                       ),
@@ -138,7 +156,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           hintText: '••••••••',
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _verPassword ? Icons.visibility_off : Icons.visibility,
+                              _verPassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
                               color: AppColors.textTertiary,
                               size: 20,
                             ),
@@ -147,7 +167,9 @@ class _AuthScreenState extends State<AuthScreen> {
                           ),
                         ),
                         validator: (v) {
-                          if (v == null || v.isEmpty) return 'Ingresa tu contraseña';
+                          if (v == null || v.isEmpty) {
+                            return 'Ingresa tu contraseña';
+                          }
                           if (_tab == AuthTab.register && v.length < 6) {
                             return 'Mínimo 6 caracteres';
                           }
@@ -161,7 +183,9 @@ class _AuthScreenState extends State<AuthScreen> {
                         TextFormField(
                           controller: _confirmarCtrl,
                           obscureText: !_verPassword,
-                          decoration: const InputDecoration(hintText: '••••••••'),
+                          decoration: const InputDecoration(
+                            hintText: '••••••••',
+                          ),
                           validator: (v) => v != _passwordCtrl.text
                               ? 'Las contraseñas no coinciden'
                               : null,
@@ -186,24 +210,10 @@ class _AuthScreenState extends State<AuthScreen> {
                       _divisorConTexto('o continúa con'),
                       const SizedBox(height: 16),
 
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _botonProveedor(
-                              emoji: '🌐',
-                              texto: 'Google',
-                              onTap: () => _proximamente('Google'),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _botonProveedor(
-                              emoji: '🍎',
-                              texto: 'Apple',
-                              onTap: () => _proximamente('Apple'),
-                            ),
-                          ),
-                        ],
+                      _botonProveedor(
+                        emoji: 'G',
+                        texto: 'Continuar con Google',
+                        onTap: _cargando ? null : _iniciarConGoogle,
                       ),
                       const SizedBox(height: 22),
 
@@ -281,7 +291,10 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _campoEtiqueta(String texto) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(texto, style: AppTypography.sectionLabel.copyWith(fontSize: 11)),
+      child: Text(
+        texto,
+        style: AppTypography.sectionLabel.copyWith(fontSize: 11),
+      ),
     );
   }
 
@@ -291,7 +304,10 @@ class _AuthScreenState extends State<AuthScreen> {
       padding: const EdgeInsets.symmetric(vertical: 28),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppColors.goldChipBg, AppColors.goldBorder.withValues(alpha: 0.6)],
+          colors: [
+            AppColors.goldChipBg,
+            AppColors.goldBorder.withValues(alpha: 0.6),
+          ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -398,10 +414,15 @@ class _AuthScreenState extends State<AuthScreen> {
                   ? const SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.2,
+                        color: Colors.white,
+                      ),
                     )
                   : Text(
-                      _tab == AuthTab.login ? 'Ingresar a MYD  →' : 'Crear cuenta  →',
+                      _tab == AuthTab.login
+                          ? 'Ingresar a MYD  →'
+                          : 'Crear cuenta  →',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -421,8 +442,12 @@ class _AuthScreenState extends State<AuthScreen> {
         Expanded(child: Divider(color: AppColors.borderSoft)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Text(texto,
-              style: AppTypography.secondary.copyWith(color: AppColors.textTertiary)),
+          child: Text(
+            texto,
+            style: AppTypography.secondary.copyWith(
+              color: AppColors.textTertiary,
+            ),
+          ),
         ),
         Expanded(child: Divider(color: AppColors.borderSoft)),
       ],
@@ -432,7 +457,7 @@ class _AuthScreenState extends State<AuthScreen> {
   Widget _botonProveedor({
     required String emoji,
     required String texto,
-    required VoidCallback onTap,
+    required VoidCallback? onTap,
   }) {
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.xl2),
@@ -442,16 +467,23 @@ class _AuthScreenState extends State<AuthScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+          border: Border.all(
+            color: AppColors.borderSoft,
+            width: AppRadii.borderWidth,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(emoji, style: const TextStyle(fontSize: 16)),
             const SizedBox(width: 8),
-            Text(texto,
-                style: const TextStyle(
-                    color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
+            Text(
+              texto,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
       ),
@@ -460,11 +492,17 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Widget _enlaceInferior() {
     if (_tab == AuthTab.login) {
-      return _textoConAccion('¿No tienes cuenta? ', 'Regístrate gratis',
-          () => setState(() => _tab = AuthTab.register));
+      return _textoConAccion(
+        '¿No tienes cuenta? ',
+        'Regístrate gratis',
+        () => setState(() => _tab = AuthTab.register),
+      );
     }
-    return _textoConAccion('¿Ya tienes cuenta? ', 'Inicia sesión',
-        () => setState(() => _tab = AuthTab.login));
+    return _textoConAccion(
+      '¿Ya tienes cuenta? ',
+      'Inicia sesión',
+      () => setState(() => _tab = AuthTab.login),
+    );
   }
 
   Widget _textoConAccion(String texto, String accion, VoidCallback onTap) {
@@ -475,7 +513,10 @@ class _AuthScreenState extends State<AuthScreen> {
           TextSpan(text: texto),
           TextSpan(
             text: accion,
-            style: const TextStyle(color: AppColors.goldDeep, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              color: AppColors.goldDeep,
+              fontWeight: FontWeight.w700,
+            ),
             recognizer: TapGestureRecognizer()..onTap = onTap,
           ),
         ],

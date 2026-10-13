@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 /// Duraciones, curvas y widgets de animación compartidos del sistema
@@ -46,6 +48,7 @@ class _FadeSlideInState extends State<FadeSlideIn> with SingleTickerProviderStat
   late final AnimationController _controller;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
+  Timer? _delayTimer;
 
   @override
   void initState() {
@@ -57,13 +60,22 @@ class _FadeSlideInState extends State<FadeSlideIn> with SingleTickerProviderStat
       end: Offset.zero,
     ).animate(_fade);
 
-    Future.delayed(widget.delay, () {
-      if (mounted) _controller.forward();
+    final delay = widget.delay;
+    if (delay == Duration.zero) {
+      _controller.forward();
+      return;
+    }
+
+    _delayTimer = Timer(delay, () {
+      if (mounted) {
+        _controller.forward();
+      }
     });
   }
 
   @override
   void dispose() {
+    _delayTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }

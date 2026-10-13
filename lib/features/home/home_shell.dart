@@ -39,7 +39,16 @@ class _HomeShellState extends State<HomeShell> {
   void _irATab(int index) => setState(() => _tabActual = index);
 
   Future<void> _cerrarSesion() async {
-    await supabase.auth.signOut();
+    try {
+      await supabase.auth.signOut();
+      if (!mounted) return;
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo cerrar la sesión: $e')),
+      );
+    }
   }
 
   void _mostrarMenuPerfil() {
@@ -157,7 +166,11 @@ class _HomeShellState extends State<HomeShell> {
                 child: avatarUrl == null
                     ? Text(
                         (nombre != null && nombre.isNotEmpty) ? nombre[0].toUpperCase() : '👤',
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
                       )
                     : null,
               ),
@@ -167,27 +180,29 @@ class _HomeShellState extends State<HomeShell> {
       ),
       body: IndexedStack(index: _tabActual, children: tabs),
       bottomNavigationBar: NavigationBar(
+        height: 76,
         backgroundColor: AppColors.navBlurBg,
         selectedIndex: _tabActual,
         onDestinationSelected: _irATab,
         indicatorColor: AppColors.goldChipBg,
-        destinations: const [
-          NavigationDestination(
+        surfaceTintColor: Colors.transparent,
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.home_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.home, color: AppColors.gold),
             label: 'Inicio',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.attach_money_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.attach_money, color: AppColors.gold),
             label: 'Finanzas',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.check_circle_outline, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.check_circle, color: AppColors.gold),
             label: 'Tareas',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.bar_chart, color: AppColors.gold),
             label: 'Reportes',

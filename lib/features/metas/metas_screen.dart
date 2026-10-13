@@ -63,6 +63,14 @@ class _MetasScreenState extends State<MetasScreen> {
   Widget build(BuildContext context) {
     final activas = _metas.where((m) => m['estado'] == 'activa').toList();
     final completadas = _metas.where((m) => m['estado'] == 'completada').toList();
+    final totalObjetivo = activas.fold<double>(0, (sum, meta) {
+      final valor = meta['monto_objetivo'];
+      return sum + ((valor is num) ? valor.toDouble() : 0.0);
+    });
+    final totalActual = activas.fold<double>(0, (sum, meta) {
+      final valor = meta['monto_actual'];
+      return sum + ((valor is num) ? valor.toDouble() : 0.0);
+    });
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
@@ -75,6 +83,43 @@ class _MetasScreenState extends State<MetasScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(20),
                 children: [
+                  if (activas.isNotEmpty || completadas.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        gradient: AppColors.goldGradient,
+                        borderRadius: BorderRadius.circular(AppRadii.xl2),
+                        boxShadow: AppColors.sombraPremium(AppColors.gold, blur: 18, dy: 8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Text('🎯', style: TextStyle(fontSize: 28)),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Progreso general',
+                                  style: AppTypography.secondary.copyWith(color: Colors.white70),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  '${formatearMonto(totalActual)} de ${formatearMonto(totalObjetivo)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
                   if (activas.isEmpty && completadas.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 60),

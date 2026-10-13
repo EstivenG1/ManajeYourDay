@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/notification_service.dart';
@@ -56,15 +57,22 @@ class _TareasScreenState extends State<TareasScreen> {
   }
 
   Future<void> _alternarEstado(Map<String, dynamic> tarea) async {
-    final nuevoEstado = tarea['estado'] == 'completada' ? 'pendiente' : 'completada';
+    final nuevoEstado = tarea['estado'] == 'completada'
+        ? 'pendiente'
+        : 'completada';
     setState(() {
       tarea['estado'] = nuevoEstado;
-      tarea['completado_en'] = nuevoEstado == 'completada' ? DateTime.now().toIso8601String() : null;
+      tarea['completado_en'] = nuevoEstado == 'completada'
+          ? DateTime.now().toIso8601String()
+          : null;
     });
-    await supabase.from('tareas').update({
-      'estado': nuevoEstado,
-      'completado_en': tarea['completado_en'],
-    }).eq('id', tarea['id']);
+    await supabase
+        .from('tareas')
+        .update({
+          'estado': nuevoEstado,
+          'completado_en': tarea['completado_en'],
+        })
+        .eq('id', tarea['id']);
 
     if (nuevoEstado == 'completada') {
       // Ya no hace falta recordarle una tarea que ya completó.
@@ -88,10 +96,16 @@ class _TareasScreenState extends State<TareasScreen> {
         title: const Text('¿Eliminar tarea?'),
         content: Text('"${tarea['titulo']}" se eliminará permanentemente.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar', style: TextStyle(color: AppColors.red)),
+            child: const Text(
+              'Eliminar',
+              style: TextStyle(color: AppColors.red),
+            ),
           ),
         ],
       ),
@@ -116,7 +130,9 @@ class _TareasScreenState extends State<TareasScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       body: _cargando
-          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.gold),
+            )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargarTareas,
@@ -129,7 +145,8 @@ class _TareasScreenState extends State<TareasScreen> {
                         : ListView.builder(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
                             itemCount: _tareasFiltradas.length,
-                            itemBuilder: (context, i) => _tarjetaTarea(_tareasFiltradas[i]),
+                            itemBuilder: (context, i) =>
+                                _tarjetaTarea(_tareasFiltradas[i]),
                           ),
                   ),
                 ],
@@ -147,26 +164,25 @@ class _TareasScreenState extends State<TareasScreen> {
   Widget _barraFiltros() {
     Widget chip(String label, _Filtro valor) {
       final activo = _filtro == valor;
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: ChoiceChip(
-          label: Text(label),
-          selected: activo,
-          onSelected: (_) => setState(() => _filtro = valor),
-          selectedColor: AppColors.gold,
-          backgroundColor: AppColors.surface,
-          labelStyle: TextStyle(
-            color: activo ? Colors.white : AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
-          ),
-          side: BorderSide(color: activo ? AppColors.gold : AppColors.borderSoft),
+      return ChoiceChip(
+        label: Text(label),
+        selected: activo,
+        onSelected: (_) => setState(() => _filtro = valor),
+        selectedColor: AppColors.gold,
+        backgroundColor: AppColors.surface,
+        labelStyle: TextStyle(
+          color: activo ? Colors.white : AppColors.textPrimary,
+          fontWeight: FontWeight.w600,
         ),
+        side: BorderSide(color: activo ? AppColors.gold : AppColors.borderSoft),
       );
     }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-      child: Row(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
         children: [
           chip('Pendientes', _Filtro.pendientes),
           chip('Completadas', _Filtro.completadas),
@@ -206,7 +222,8 @@ class _TareasScreenState extends State<TareasScreen> {
       'baja': tema.prioridadBaja,
     };
     final completada = tarea['estado'] == 'completada';
-    final color = coloresPrioridad[tarea['prioridad']] ?? AppColors.textTertiary;
+    final color =
+        coloresPrioridad[tarea['prioridad']] ?? AppColors.textTertiary;
     final fecha = DateTime.parse(tarea['fecha_limite']);
     final fechaTexto =
         '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}  ${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
@@ -217,7 +234,10 @@ class _TareasScreenState extends State<TareasScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(tema.radioTarjeta),
-        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Row(
         children: [
@@ -239,24 +259,48 @@ class _TareasScreenState extends State<TareasScreen> {
                   Text(
                     tarea['titulo'] ?? '',
                     style: AppTypography.itemTitle.copyWith(
-                      color: completada ? AppColors.textTertiary : AppColors.textPrimary,
-                      decoration: completada ? TextDecoration.lineThrough : TextDecoration.none,
+                      color: completada
+                          ? AppColors.textTertiary
+                          : AppColors.textPrimary,
+                      decoration: completada
+                          ? TextDecoration.lineThrough
+                          : TextDecoration.none,
                     ),
                   ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.schedule, size: 13, color: AppColors.textTertiary),
-                      const SizedBox(width: 4),
-                      Text(fechaTexto, style: AppTypography.secondary.copyWith(color: AppColors.textTertiary, fontSize: 12)),
-                      const SizedBox(width: 10),
-                      Container(
-                        width: 7, height: 7,
-                        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                      const Icon(
+                        Icons.schedule,
+                        size: 13,
+                        color: AppColors.textTertiary,
                       ),
                       const SizedBox(width: 4),
-                      Text((tarea['prioridad'] ?? '').toString().toUpperCase(),
-                          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+                      Text(
+                        fechaTexto,
+                        style: AppTypography.secondary.copyWith(
+                          color: AppColors.textTertiary,
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          color: color,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        (tarea['prioridad'] ?? '').toString().toUpperCase(),
+                        style: TextStyle(
+                          color: color,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ],
                   ),
                 ],
@@ -264,7 +308,11 @@ class _TareasScreenState extends State<TareasScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 20),
+            icon: const Icon(
+              Icons.delete_outline,
+              color: AppColors.textTertiary,
+              size: 20,
+            ),
             onPressed: () => _eliminarTarea(tarea),
           ),
         ],

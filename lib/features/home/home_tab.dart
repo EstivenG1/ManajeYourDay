@@ -100,6 +100,10 @@ class _HomeTabState extends State<HomeTab> {
       tareasCompletadas: _tareasCompletadasMes,
       tareasTotales: _tareasTotalesMes,
     );
+    final balanceMes = _ingresosMes - _gastosMes;
+    final productividad = _tareasTotalesMes == 0
+        ? 0.0
+        : (_tareasCompletadasMes / _tareasTotalesMes) * 100;
 
     return RefreshIndicator(
       color: AppColors.gold,
@@ -113,15 +117,94 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 20),
 
           _tarjetaBalance(),
+          const SizedBox(height: 18),
+          Row(
+            children: [
+              Expanded(
+                child: _chipResumen(
+                  titulo: 'Productividad',
+                  valor: '${productividad.toStringAsFixed(0)}%',
+                  color: AppColors.goldDeep,
+                  fondo: AppColors.goldSoftBg,
+                  borde: AppColors.goldBorder,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _chipResumen(
+                  titulo: 'Balance',
+                  valor: formatearMonto(balanceMes),
+                  color: balanceMes >= 0 ? AppColors.green : AppColors.red,
+                  fondo: balanceMes >= 0 ? AppColors.greenChipBg : AppColors.redChipBg,
+                  borde: balanceMes >= 0 ? AppColors.greenChipBorder : AppColors.redChipBorder,
+                ),
+              ),
+            ],
+          ),
 
           if (_tareasPendientes.isNotEmpty) ...[
             const SizedBox(height: 20),
             _seccionTareasPendientes(),
+          ] else ...[
+            const SizedBox(height: 20),
+            _seccionSinTareas(),
           ],
 
           const SizedBox(height: 20),
           _seccionConsejosIA(consejos),
           const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _chipResumen({
+    required String titulo,
+    required String valor,
+    required Color color,
+    required Color fondo,
+    required Color borde,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: fondo,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(color: borde),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(titulo, style: AppTypography.secondary.copyWith(color: color, fontSize: 10.5)),
+          const SizedBox(height: 4),
+          Text(
+            valor,
+            style: AppTypography.itemTitle.copyWith(color: color, fontSize: 15),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _seccionSinTareas() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+      ),
+      child: Row(
+        children: [
+          const Text('✅', style: TextStyle(fontSize: 22)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Todo está tranquilo por ahora. Toca Tareas para crear tu próxima prioridad.',
+              style: AppTypography.secondary,
+            ),
+          ),
         ],
       ),
     );
@@ -207,24 +290,35 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 10),
           ..._tareasPendientes.map((t) {
-            final fechaLimite = DateTime.parse(t['fecha_limite']);
-            final hora =
-                '${fechaLimite.hour.toString().padLeft(2, '0')}:${fechaLimite.minute.toString().padLeft(2, '0')}';
+            final fechaLimiteRaw = t['fecha_limite'];
+            final fechaLimite = fechaLimiteRaw is String
+                ? DateTime.tryParse(fechaLimiteRaw)
+                : null;
+            final hora = fechaLimite != null
+                ? '${fechaLimite.hour.toString().padLeft(2, '0')}:${fechaLimite.minute.toString().padLeft(2, '0')}'
+                : 'Sin hora';
             final color = coloresPrioridad[t['prioridad']] ?? AppColors.textTertiary;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
               child: Row(
                 children: [
                   Container(
-                    width: 8, height: 8,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(color: color, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(t['titulo'] ?? '',
-                        style: AppTypography.itemTitle, overflow: TextOverflow.ellipsis),
+                    child: Text(
+                      t['titulo'] ?? 'Tarea sin título',
+                      style: AppTypography.itemTitle,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
-                  Text(hora, style: AppTypography.secondary.copyWith(color: AppColors.textTertiary)),
+                  Text(
+                    hora,
+                    style: AppTypography.secondary.copyWith(color: AppColors.textTertiary),
+                  ),
                 ],
               ),
             );
