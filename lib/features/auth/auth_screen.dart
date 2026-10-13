@@ -47,8 +47,34 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _restablecerPassword() async {
     final correo = _correoCtrl.text.trim();
-    if (correo.isEmpty ||
-        !RegExp(r'^[\\w.+-]+@[\\w-]+\\.[\\w.-]+
+    if (!correo.contains('@') || !correo.contains('.')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Escribe un correo válido para enviarte el enlace.')),
+      );
+      return;
+    }
+    try {
+      await supabase.auth.resetPasswordForEmail(correo);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Si la cuenta existe, recibirás un correo para restablecer tu contraseña.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(mensajeErrorAuth(e))),
+      );
+    }
+  }
+
+  Future<void> _enviar() async {
+    if (_tab == AuthTab.register && !_aceptaTerminos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Acepta los términos y la política de privacidad para continuar.')),
+      );
+      return;
+    }
+    if (!_formKey.currentState!.validate()) return;
     setState(() => _cargando = true);
 
     try {
@@ -62,25 +88,14 @@ class _AuthScreenState extends State<AuthScreen> {
               password: _passwordCtrl.text,
               data: {
                 'nombre': _nombreCtrl.text.trim(),
-                'apellido': _apellidoCtrl.text.trim().isEmpty
-                    ? null
-                    : _apellidoCtrl.text.trim(),
+                'apellido': _apellidoCtrl.text.trim().isEmpty ? null : _apellidoCtrl.text.trim(),
                 'telefono': _telefonoCtrl.text.trim(),
               },
             );
-
       if (!mounted) return;
-
       if (respuesta.session != null) {
-        // Ya hay sesión activa: AuthGate (debajo de esta pantalla en la
-        // pila de navegación) ya cambió a HomeShell — solo hace falta
-        // cerrar esta pantalla para que se vea. Sin este paso, la app
-        // se queda "detrás" del login hasta que el usuario presiona
-        // atrás (el bug reportado).
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else if (_tab == AuthTab.register) {
-        // Caso borde: si la confirmación de correo estuviera activada
-        // en Supabase, signUp no crea sesión de inmediato.
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Cuenta creada. Ahora inicia sesión.')),
         );
@@ -88,13 +103,13 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(mensajeErrorAuth(e))));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(mensajeErrorAuth(e))),
+      );
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
   }
-
   Future<void> _iniciarConGoogle() async {
     if (_cargando) return;
     setState(() => _cargando = true);
