@@ -216,11 +216,18 @@ class _MetasScreenState extends State<MetasScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('${formatearMonto(actual)} de ${formatearMonto(objetivo)}',
+                Expanded(
+                  child: Text(
+                    '${formatearMonto(actual)} de ${formatearMonto(objetivo)}',
                     style: TextStyle(
                       color: completada ? AppColors.textSecondary : Colors.white70,
                       fontSize: 12.5,
-                    )),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Text('${(pct * 100).toStringAsFixed(0)}%',
                     style: TextStyle(
                       color: completada ? AppColors.textPrimary : Colors.white,

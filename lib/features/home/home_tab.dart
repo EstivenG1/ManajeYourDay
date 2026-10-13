@@ -280,7 +280,15 @@ class _HomeTabState extends State<HomeTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('TAREAS PENDIENTES', style: AppTypography.sectionLabel),
+              Expanded(
+                child: Text(
+                  'TAREAS PENDIENTES',
+                  style: AppTypography.sectionLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: widget.onVerTareas,
                 child: Text('Ver todas →',
@@ -342,8 +350,14 @@ class _HomeTabState extends State<HomeTab> {
           Row(
             children: [
               const Text('✨ ', style: TextStyle(fontSize: 16)),
-              Text('RECOMENDACIONES PARA TI',
-                  style: AppTypography.sectionLabel.copyWith(color: AppColors.goldDeep)),
+              Expanded(
+                child: Text(
+                  'RECOMENDACIONES PARA TI',
+                  style: AppTypography.sectionLabel.copyWith(color: AppColors.goldDeep),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),

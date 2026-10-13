@@ -558,9 +558,24 @@ class _ReportesScreenState extends State<ReportesScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(nombre, style: AppTypography.itemTitle),
-              Text('${formatearMonto(actual)} / ${formatearMonto(total)}',
-                  style: AppTypography.secondary.copyWith(fontSize: 11.5)),
+              Expanded(
+                child: Text(
+                  nombre,
+                  style: AppTypography.itemTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  '${formatearMonto(actual)} / ${formatearMonto(total)}',
+                  style: AppTypography.secondary.copyWith(fontSize: 11.5),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.end,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
