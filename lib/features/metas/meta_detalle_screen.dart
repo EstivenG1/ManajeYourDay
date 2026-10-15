@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/notification_service.dart';
 import 'meta_form_screen.dart';
 
 class MetaDetalleScreen extends StatefulWidget {
@@ -16,6 +17,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
   late Map<String, dynamic> _meta;
   List<Map<String, dynamic>> _aportes = [];
   bool _cargando = true;
+  String? _errorCarga;
 
   @override
   void initState() {
@@ -43,10 +45,16 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
           _meta = metaActualizada;
           _aportes = List<Map<String, dynamic>>.from(aportes);
           _cargando = false;
+          _errorCarga = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _cargando = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _errorCarga = 'No se pudo cargar el detalle de la meta: $error';
+        });
+      }
     }
   }
 
@@ -116,6 +124,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
     );
 
     if (resultado == true) {
+      final montoAnterior = (_meta['monto_actual'] as num).toDouble();
       final monto = double.tryParse(montoCtrl.text.replaceAll(',', '.'));
       if (monto == null || monto <= 0) return;
       try {
@@ -126,7 +135,19 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
           'monto': monto,
           'nota': notaCtrl.text.trim().isEmpty ? null : notaCtrl.text.trim(),
         });
-        _cargar();
+        await _cargar();
+        final montoActual = (_meta['monto_actual'] as num).toDouble();
+        final objetivo = (_meta['monto_objetivo'] as num).toDouble();
+        for (final hito in [25, 50, 75, 100]) {
+          if (montoAnterior / objetivo * 100 < hito &&
+              montoActual / objetivo * 100 >= hito) {
+            await NotificationService.mostrarHitoMeta(
+              metaId: _meta['id'].toString(),
+              nombre: _meta['nombre'] as String,
+              porcentaje: hito,
+            );
+          }
+        }
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo agregar: $e')));
@@ -145,7 +166,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar', style: TextStyle(color: AppColors.red)),
+            child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
@@ -174,7 +195,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar', style: TextStyle(color: AppColors.red)),
+            child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
@@ -208,7 +229,24 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
         ],
       ),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+          ? Center(child: CircularProgressIndicator(color: AppColors.gold))
+          : _errorCarga != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_errorCarga!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _cargar,
+                          child: const Text('Reintentar'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -218,7 +256,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                   Container(
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [AppColors.gold, AppColors.goldDark]),
+                      gradient: LinearGradient(colors: [AppColors.gold, AppColors.goldDark]),
                       borderRadius: BorderRadius.circular(AppRadii.xl3),
                       boxShadow: AppColors.sombraPremium(AppColors.gold, blur: 24, dy: 10),
                     ),
@@ -290,7 +328,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.savings_outlined, color: AppColors.gold, size: 20),
+                            Icon(Icons.savings_outlined, color: AppColors.gold, size: 20),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
@@ -307,7 +345,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                               ),
                             ),
                             IconButton(
-                              icon: const Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 18),
+                              icon: Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 18),
                               onPressed: () => _eliminarAporte(a),
                             ),
                           ],

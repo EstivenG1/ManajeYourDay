@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import 'home_tab.dart';
@@ -19,7 +20,12 @@ class _HomeShellState extends State<HomeShell> {
   int _tabActual = 0;
   Map<String, dynamic>? _perfil;
 
-  static const _titulos = ['Inicio', 'Finanzas', 'Tareas', 'Reportes'];
+  List<String> _titulos(BuildContext context) => [
+        appText(context, 'Inicio', 'Home'),
+        appText(context, 'Finanzas', 'Finance'),
+        appText(context, 'Tareas', 'Tasks'),
+        appText(context, 'Reportes', 'Reports'),
+      ];
 
   @override
   void initState() {
@@ -101,8 +107,9 @@ class _HomeShellState extends State<HomeShell> {
               Divider(color: AppColors.borderSoft),
               const SizedBox(height: 8),
               ListTile(
-                leading: const Icon(Icons.person_outline, color: AppColors.gold),
-                title: Text('Mi perfil', style: AppTypography.itemTitle),
+                leading: Icon(Icons.person_outline, color: AppColors.gold),
+                title: Text(appText(context, 'Mi perfil', 'My profile'),
+                    style: AppTypography.itemTitle),
                 onTap: () async {
                   Navigator.pop(context);
                   await Navigator.push(
@@ -113,8 +120,10 @@ class _HomeShellState extends State<HomeShell> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.history, color: AppColors.gold),
-                title: Text('Historial de actividad', style: AppTypography.itemTitle),
+                leading: Icon(Icons.history, color: AppColors.gold),
+                title: Text(
+                    appText(context, 'Historial de actividad', 'Activity history'),
+                    style: AppTypography.itemTitle),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(
@@ -124,8 +133,8 @@ class _HomeShellState extends State<HomeShell> {
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.logout, color: AppColors.red),
-                title: Text('Cerrar sesión',
+                leading: Icon(Icons.logout, color: AppColors.red),
+                title: Text(appText(context, 'Cerrar sesión', 'Sign out'),
                     style: AppTypography.itemTitle.copyWith(color: AppColors.red)),
                 onTap: () {
                   Navigator.pop(context);
@@ -154,7 +163,7 @@ class _HomeShellState extends State<HomeShell> {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
-        title: Text(_titulos[_tabActual]),
+        title: Text(_titulos(context)[_tabActual]),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
@@ -187,25 +196,25 @@ class _HomeShellState extends State<HomeShell> {
         indicatorColor: AppColors.goldChipBg,
         surfaceTintColor: Colors.transparent,
         destinations: [
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.home_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.home, color: AppColors.gold),
-            label: 'Inicio',
+            label: appText(context, 'Inicio', 'Home'),
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.attach_money_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.attach_money, color: AppColors.gold),
-            label: 'Finanzas',
+            label: appText(context, 'Finanzas', 'Finance'),
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.check_circle_outline, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.check_circle, color: AppColors.gold),
-            label: 'Tareas',
+            label: appText(context, 'Tareas', 'Tasks'),
           ),
-          const NavigationDestination(
+          NavigationDestination(
             icon: Icon(Icons.bar_chart_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.bar_chart, color: AppColors.gold),
-            label: 'Reportes',
+            label: appText(context, 'Reportes', 'Reports'),
           ),
         ],
       ),

@@ -359,7 +359,7 @@ class _AuthScreenState extends State<AuthScreen> {
       width: double.infinity,
       height: 160,
       padding: const EdgeInsets.only(bottom: 20, top: 18),
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: AppColors.bgSplashGradient,
           begin: Alignment.topCenter,
@@ -560,7 +560,7 @@ class _AuthScreenState extends State<AuthScreen> {
             const SizedBox(width: 8),
             Text(
               texto,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w600,
               ),
@@ -594,7 +594,7 @@ class _AuthScreenState extends State<AuthScreen> {
           TextSpan(text: texto),
           TextSpan(
             text: accion,
-            style: const TextStyle(
+            style: TextStyle(
               color: AppColors.goldDeep,
               fontWeight: FontWeight.w700,
             ),

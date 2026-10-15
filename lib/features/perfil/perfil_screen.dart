@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:storage_client/storage_client.dart';
 
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/settings/app_settings.dart';
+import '../../core/services/notification_service.dart';
 
 class PerfilScreen extends StatefulWidget {
   const PerfilScreen({super.key});
@@ -40,6 +43,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
   String? _avatarUrl;
   String? _correo;
   String? _nombrePlan;
+  String? _errorCarga;
+  double _escalaTexto = 1;
 
   bool _cargando = true;
   bool _guardando = false;
@@ -80,16 +85,23 @@ class _PerfilScreenState extends State<PerfilScreen> {
       _correo = data['correo'];
 
       _nombrePlan = data['planes']?['nombre'] ?? 'Basico';
+      _escalaTexto = AppSettings.instance.textScale;
+      await AppSettings.instance.setRegionalPreferences(
+        currency: _moneda,
+        language: _idioma,
+      );
 
       if (mounted) {
         setState(() {
           _cargando = false;
+          _errorCarga = null;
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           _cargando = false;
+          _errorCarga = 'No se pudo cargar tu perfil: $error';
         });
       }
     }
@@ -167,6 +179,10 @@ class _PerfilScreenState extends State<PerfilScreen> {
             'avatar_url': urlSinCache,
           })
           .eq('id', userId);
+      await AppSettings.instance.setRegionalPreferences(
+        currency: _moneda,
+        language: _idioma,
+      );
 
       if (!mounted) return;
 
@@ -265,27 +281,69 @@ class _PerfilScreenState extends State<PerfilScreen> {
   // ELIMINAR CUENTA
   // ============================================================
 
-  void _confirmarEliminarCuenta() {
-    showDialog(
+  Future<void> _confirmarEliminarCuenta() async {
+    final confirmacionCtrl = TextEditingController();
+    final confirmada = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Eliminar cuenta'),
         content: const Text(
-          'Por seguridad, eliminar una cuenta definitivamente requiere '
-          'un proceso en el servidor que todavía no está construido '
-          '(para evitar borrados accidentales o no autorizados). '
-          'Cuando esté listo, desde aquí mismo podrás solicitarlo. '
-          'Por ahora, si necesitas eliminar tu cuenta, contacta al '
-          'equipo de MYD.',
+          'Esta acción es permanente y eliminará tu cuenta y los datos '
+          'asociados. Escribe ELIMINAR para confirmar.',
         ),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
         actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: TextField(
+              controller: confirmacionCtrl,
+              decoration: const InputDecoration(hintText: 'ELIMINAR'),
+            ),
+          ),
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Entendido'),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(
+              context,
+              confirmacionCtrl.text.trim() == 'ELIMINAR',
+            ),
+            child: const Text('Eliminar definitivamente'),
           ),
         ],
       ),
     );
+    final frase = confirmacionCtrl.text.trim();
+    confirmacionCtrl.dispose();
+    if (confirmada != true || frase != 'ELIMINAR') {
+      if (confirmada == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Escribe ELIMINAR para confirmar.')),
+        );
+      }
+      return;
+    }
+
+    try {
+      setState(() => _guardando = true);
+      await supabase.functions.invoke('delete-account');
+      await supabase.auth.signOut();
+      if (mounted) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tu cuenta fue eliminada.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo eliminar la cuenta: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _guardando = false);
+    }
   }
 
   // ============================================================
@@ -298,9 +356,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
       return Scaffold(
         backgroundColor: AppColors.bgPrimary,
         appBar: AppBar(
-          title: const Text('Mi perfil'),
+          title: Text(appText(context, 'Mi perfil', 'My profile')),
         ),
-        body: const Center(
+        body: Center(
           child: CircularProgressIndicator(
             color: AppColors.gold,
           ),
@@ -311,12 +369,24 @@ class _PerfilScreenState extends State<PerfilScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
-        title: const Text('Mi perfil'),
+        title: Text(appText(context, 'Mi perfil', 'My profile')),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
-          child: Column(
+          child: _errorCarga != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_errorCarga!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: _cargarPerfil,
+                      child: Text(appText(context, 'Reintentar', 'Retry')),
+                    ),
+                  ],
+                )
+              : Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
@@ -338,9 +408,22 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 child: _badgePlan(),
               ),
 
+              const SizedBox(height: 8),
+              Text(
+                appText(
+                  context,
+                  'Los planes y funciones Premium se asignan desde el servicio MYD. '
+                      'La app todavía no procesa pagos ni cambios de suscripción.',
+                  'Plans and Premium features are managed by the MYD service. '
+                      'The app does not process payments or subscription changes yet.',
+                ),
+                textAlign: TextAlign.center,
+                style: AppTypography.secondary,
+              ),
+
               const SizedBox(height: 28),
 
-              _seccionTitulo('DATOS PERSONALES'),
+              _seccionTitulo(appText(context, 'DATOS PERSONALES', 'PERSONAL DETAILS')),
 
               Row(
                 children: [
@@ -390,7 +473,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
               const SizedBox(height: 24),
 
-              _seccionTitulo('PREFERENCIAS'),
+              _seccionTitulo(appText(context, 'PREFERENCIAS', 'PREFERENCES')),
 
               Row(
                 children: [
@@ -402,6 +485,67 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     child: _selectorIdioma(),
                   ),
                 ],
+              ),
+
+              const SizedBox(height: 18),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(appText(context, 'Modo oscuro', 'Dark mode')),
+                subtitle: Text(appText(
+                    context, 'Usar una apariencia oscura en la app', 'Use a dark appearance')),
+                value: AppSettings.instance.isDark,
+                onChanged: (value) => AppSettings.instance.setThemeMode(
+                  value ? ThemeMode.dark : ThemeMode.light,
+                ),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(appText(context, 'Alto contraste', 'High contrast')),
+                subtitle: Text(appText(context,
+                    'Aumentar el contraste de textos y bordes',
+                    'Increase text and border contrast')),
+                value: AppSettings.instance.highContrast,
+                onChanged: AppSettings.instance.setHighContrast,
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(appText(context, 'Notificaciones', 'Notifications')),
+                subtitle: Text(appText(context,
+                    'Recordatorios de tareas, metas y pagos',
+                    'Task, goal, and bill reminders')),
+                value: AppSettings.instance.notificationsEnabled,
+                onChanged: (value) async {
+                  await AppSettings.instance.setNotificationsEnabled(value);
+                  if (value) {
+                    await NotificationService.solicitarPermisos();
+                  } else {
+                    await NotificationService.cancelarTodas();
+                  }
+                },
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${appText(context, 'Tamaño del texto', 'Text size')}: '
+                      '${(_escalaTexto * 100).round()}%',
+                      style: AppTypography.itemTitle,
+                    ),
+                    Slider(
+                      value: _escalaTexto,
+                      min: 0.85,
+                      max: 1.4,
+                      divisions: 11,
+                      label: '${(_escalaTexto * 100).round()}%',
+                      onChanged: (value) {
+                        setState(() => _escalaTexto = value);
+                        AppSettings.instance.setTextScale(value);
+                      },
+                    ),
+                  ],
+                ),
               ),
 
               const SizedBox(height: 28),
@@ -450,7 +594,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
               const SizedBox(height: 36),
 
               _seccionTitulo(
-                'ZONA DE PELIGRO',
+                appText(context, 'ZONA DE PELIGRO', 'DANGER ZONE'),
                 color: AppColors.red,
               ),
 
@@ -459,14 +603,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.red,
-                  side: const BorderSide(
+                  side: BorderSide(
                     color: AppColors.red,
                   ),
                 ),
                 onPressed: _confirmarEliminarCuenta,
-                child: const Text(
-                  'Eliminar cuenta',
-                ),
+                child: Text(appText(context, 'Eliminar cuenta', 'Delete account')),
               ),
 
               const SizedBox(height: 12),
@@ -497,7 +639,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     _nombreCtrl.text.isNotEmpty
                         ? _nombreCtrl.text[0].toUpperCase()
                         : '👤',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 28,
                       color: AppColors.goldDeep,
                       fontWeight: FontWeight.w700,
@@ -512,7 +654,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
             child: Container(
               width: 28,
               height: 28,
-              decoration: const BoxDecoration(
+              decoration: BoxDecoration(
                 color: AppColors.gold,
                 shape: BoxShape.circle,
               ),
@@ -558,7 +700,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
       ),
       child: Text(
         'Plan ${_nombrePlan ?? "Básico"}',
-        style: const TextStyle(
+        style: TextStyle(
           color: AppColors.goldDeep,
           fontWeight: FontWeight.w700,
           fontSize: 12,

@@ -21,7 +21,7 @@ class ReportesTheme extends ThemeExtension<ReportesTheme> {
     required this.radioTarjetaKpi,
   });
 
-  static const estandar = ReportesTheme(
+  static ReportesTheme get estandar => ReportesTheme(
     kpiIngresoBg: AppColors.greenChipBg,
     kpiIngresoBorder: AppColors.greenChipBorder,
     kpiGastoBg: AppColors.redChipBg,

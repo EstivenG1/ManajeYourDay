@@ -2,6 +2,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
 import '../supabase/supabase_config.dart';
+import '../settings/app_settings.dart';
 
 /// Servicio de notificaciones locales de MYD.
 /// Las notificaciones se programan y muestran directamente en el dispositivo.
@@ -34,24 +35,25 @@ class NotificationService {
 
     await _plugin.initialize(settings);
 
-    // Solicitar permiso para Android.
+    if (AppSettings.instance.notificationsEnabled) {
+      await solicitarPermisos();
+    }
+
+    _listo = true;
+  }
+
+  static Future<void> solicitarPermisos() async {
     await _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
-
-    // Solicitar permiso para iOS.
     await _plugin
         .resolvePlatformSpecificImplementation<
             IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(
-          alert: true,
-          badge: true,
-          sound: true,
-        );
-
-    _listo = true;
+        ?.requestPermissions(alert: true, badge: true, sound: true);
   }
+
+  static Future<void> cancelarTodas() => _plugin.cancelAll();
 
   // Canal para recordatorios de tareas.
   static const AndroidNotificationDetails _canalTareas =
@@ -81,7 +83,7 @@ class NotificationService {
     required String titulo,
     required DateTime fechaLimite,
   }) async {
-    if (!_listo) return;
+    if (!_listo || !AppSettings.instance.notificationsEnabled) return;
 
     final momento =
         fechaLimite.subtract(const Duration(minutes: 15));
@@ -117,13 +119,95 @@ class NotificationService {
     await _plugin.cancel(tareaId.hashCode);
   }
 
+  static Future<void> programarRecordatorioFinanciero({
+    required String recurrenciaId,
+    required String tipo,
+    required String descripcion,
+    required DateTime proximaFecha,
+  }) async {
+    if (!_listo || !AppSettings.instance.notificationsEnabled) return;
+    final aviso = DateTime(
+      proximaFecha.year,
+      proximaFecha.month,
+      proximaFecha.day,
+      9,
+    ).subtract(const Duration(days: 1));
+    if (aviso.isBefore(DateTime.now())) return;
+    await _plugin.zonedSchedule(
+      ('finanzas_$recurrenciaId').hashCode,
+      tipo == 'gasto' ? 'Pago próximo 💳' : 'Ingreso próximo 💰',
+      descripcion,
+      tz.TZDateTime.from(aviso, tz.local),
+      const NotificationDetails(
+        android: _canalPresupuestos,
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  static Future<void> cancelarRecordatorioFinanciero(String id) async {
+    await _plugin.cancel(('finanzas_$id').hashCode);
+  }
+
+  static Future<void> programarRecordatorioMeta({
+    required String metaId,
+    required String nombre,
+    required double aporte,
+    required String frecuencia,
+    required DateTime proximoAporte,
+  }) async {
+    if (!_listo ||
+        !AppSettings.instance.notificationsEnabled ||
+        aporte <= 0) {
+      return;
+    }
+    final aviso = DateTime(
+      proximoAporte.year,
+      proximoAporte.month,
+      proximoAporte.day,
+      9,
+    );
+    await _plugin.zonedSchedule(
+      ('meta_$metaId').hashCode,
+      'Recuerda tu aporte a "$nombre" 🎯',
+      'Tu aporte ${frecuencia == 'mensual' ? 'mensual' : frecuencia} '
+          'programado es de ${aporte.toStringAsFixed(0)}.',
+      tz.TZDateTime.from(aviso, tz.local),
+      const NotificationDetails(
+        android: _canalPresupuestos,
+        iOS: DarwinNotificationDetails(),
+      ),
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      uiLocalNotificationDateInterpretation:
+          UILocalNotificationDateInterpretation.absoluteTime,
+    );
+  }
+
+  static Future<void> cancelarRecordatorioMeta(String metaId) =>
+      _plugin.cancel(('meta_$metaId').hashCode);
+
+  static Future<void> mostrarHitoMeta({
+    required String metaId,
+    required String nombre,
+    required int porcentaje,
+  }) async {
+    await _mostrarAhora(
+      id: ('meta_hito_${metaId}_$porcentaje').hashCode,
+      titulo: '¡Hito de ahorro alcanzado! 🎉',
+      cuerpo: '"$nombre" llegó al $porcentaje% de su objetivo.',
+    );
+  }
+
   /// Muestra inmediatamente una notificación.
   static Future<void> _mostrarAhora({
     required int id,
     required String titulo,
     required String cuerpo,
   }) async {
-    if (!_listo) return;
+    if (!_listo || !AppSettings.instance.notificationsEnabled) return;
 
     await _plugin.show(
       id,
@@ -175,27 +259,26 @@ class NotificationService {
       if (presupuesto == null) return;
 
       // Buscar gastos del periodo.
-      final gastado = await supabase
-          .from('movimientos')
-          .select('monto')
-          .eq('usuario_id', userId)
-          .eq('categoria_id', categoriaId)
-          .eq('tipo', 'gasto')
-          .gte(
-            'fecha',
-            presupuesto['fecha_inicio'],
-          )
-          .lte(
-            'fecha',
-            presupuesto['fecha_fin'],
-          );
-
-      final total = (gastado as List).fold<double>(
-        0,
-        (acumulado, movimiento) =>
-            acumulado +
-            (movimiento['monto'] as num).toDouble(),
-      );
+      var total = 0.0;
+      const tamanoPagina = 500;
+      for (var inicio = 0;; inicio += tamanoPagina) {
+        final gastado = await supabase
+            .from('movimientos')
+            .select('monto')
+            .eq('usuario_id', userId)
+            .eq('categoria_id', categoriaId)
+            .eq('tipo', 'gasto')
+            .gte('fecha', presupuesto['fecha_inicio'])
+            .lte('fecha', presupuesto['fecha_fin'])
+            .order('id')
+            .range(inicio, inicio + tamanoPagina - 1);
+        total += (gastado as List).fold<double>(
+          0,
+          (acumulado, movimiento) =>
+              acumulado + (movimiento['monto'] as num).toDouble(),
+        );
+        if (gastado.length < tamanoPagina) break;
+      }
 
       final limite =
           (presupuesto['monto_limite'] as num).toDouble();
@@ -231,4 +314,3 @@ class NotificationService {
     }
   }
 }
-

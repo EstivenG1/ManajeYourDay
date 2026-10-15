@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/notification_service.dart';
 import 'meta_form_screen.dart';
 import 'meta_detalle_screen.dart';
 
@@ -14,6 +15,7 @@ class MetasScreen extends StatefulWidget {
 
 class _MetasScreenState extends State<MetasScreen> {
   bool _cargando = true;
+  String? _errorCarga;
   List<Map<String, dynamic>> _metas = [];
   bool _mostrarCompletadas = false;
 
@@ -32,15 +34,63 @@ class _MetasScreenState extends State<MetasScreen> {
           .select()
           .eq('usuario_id', userId)
           .order('creado_en', ascending: false);
+      for (final meta in data as List) {
+        final aporte = (meta['aporte_programado'] as num?)?.toDouble() ?? 0;
+        if (meta['estado'] == 'activa' && aporte > 0) {
+          var proximo = meta['proximo_aporte'] == null
+              ? DateTime.now()
+              : DateTime.parse(meta['proximo_aporte'] as String);
+          final hoy = DateTime.now();
+          while (!proximo.isAfter(DateTime(hoy.year, hoy.month, hoy.day))) {
+            proximo = _siguienteAporte(
+              proximo,
+              meta['frecuencia_aporte'] as String? ?? 'mensual',
+            );
+          }
+          await supabase.from('metas_ahorro').update({
+            'proximo_aporte': proximo.toIso8601String().split('T').first,
+          }).eq('id', meta['id']);
+          await NotificationService.programarRecordatorioMeta(
+            metaId: meta['id'].toString(),
+            nombre: meta['nombre'] as String,
+            aporte: aporte,
+            frecuencia: meta['frecuencia_aporte'] as String? ?? 'mensual',
+            proximoAporte: proximo,
+          );
+        } else {
+          await NotificationService.cancelarRecordatorioMeta(
+            meta['id'].toString(),
+          );
+        }
+      }
       if (mounted) {
         setState(() {
           _metas = List<Map<String, dynamic>>.from(data);
           _cargando = false;
+          _errorCarga = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _cargando = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _errorCarga = 'No se pudieron cargar las metas: $error';
+        });
+      }
     }
+  }
+
+  DateTime _siguienteAporte(DateTime fecha, String frecuencia) {
+    if (frecuencia == 'semanal') return fecha.add(const Duration(days: 7));
+    if (frecuencia == 'quincenal') return fecha.add(const Duration(days: 14));
+    final primerDiaSiguiente = DateTime(fecha.year, fecha.month + 1, 1);
+    final ultimoDiaSiguiente =
+        DateTime(primerDiaSiguiente.year, primerDiaSiguiente.month + 1, 0);
+    return DateTime(
+      primerDiaSiguiente.year,
+      primerDiaSiguiente.month,
+      fecha.day.clamp(1, ultimoDiaSiguiente.day),
+    );
   }
 
   Future<void> _abrirCrear() async {
@@ -76,7 +126,24 @@ class _MetasScreenState extends State<MetasScreen> {
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(title: const Text('Metas de ahorro')),
       body: _cargando
-          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+          ? Center(child: CircularProgressIndicator(color: AppColors.gold))
+          : _errorCarga != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_errorCarga!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        OutlinedButton(
+                          onPressed: _cargar,
+                          child: const Text('Reintentar'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -177,7 +244,7 @@ class _MetasScreenState extends State<MetasScreen> {
         decoration: BoxDecoration(
           gradient: completada
               ? null
-              : const LinearGradient(colors: [AppColors.gold, AppColors.goldDark]),
+              : LinearGradient(colors: [AppColors.gold, AppColors.goldDark]),
           color: completada ? AppColors.surface : null,
           borderRadius: BorderRadius.circular(AppRadii.xl2),
           border: completada ? Border.all(color: AppColors.borderSoft) : null,
@@ -199,7 +266,7 @@ class _MetasScreenState extends State<MetasScreen> {
                       )),
                 ),
                 if (completada)
-                  const Icon(Icons.check_circle, color: AppColors.green, size: 18),
+                  Icon(Icons.check_circle, color: AppColors.green, size: 18),
               ],
             ),
             const SizedBox(height: 12),
@@ -217,14 +284,36 @@ class _MetasScreenState extends State<MetasScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Expanded(
-                  child: Text(
-                    '${formatearMonto(actual)} de ${formatearMonto(objetivo)}',
-                    style: TextStyle(
-                      color: completada ? AppColors.textSecondary : Colors.white70,
-                      fontSize: 12.5,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${formatearMonto(actual)} de ${formatearMonto(objetivo)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: completada
+                              ? AppColors.textSecondary
+                              : Colors.white70,
+                          fontSize: 12.5,
+                        ),
+                      ),
+                      if (((meta['aporte_programado'] as num?)
+                                  ?.toDouble() ??
+                              0) >
+                          0) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Aporte ${meta['frecuencia_aporte'] ?? 'mensual'}: '
+                          '${formatearMonto(meta['aporte_programado'])}',
+                          style: AppTypography.secondary.copyWith(
+                            color: completada
+                                ? AppColors.textSecondary
+                                : Colors.white70,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 const SizedBox(width: 8),

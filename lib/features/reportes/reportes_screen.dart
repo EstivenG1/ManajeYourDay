@@ -1,9 +1,11 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
 import '../../core/services/reportes_service.dart';
+import 'exportar_datos_screen.dart';
 
 class ReportesScreen extends StatefulWidget {
   const ReportesScreen({super.key});
@@ -16,7 +18,8 @@ class _ReportesScreenState extends State<ReportesScreen> {
   PeriodoReporte _periodo = PeriodoReporte.semana;
   ReporteData? _datos;
   bool _cargando = true;
-  bool _esPremium = true; // se ajusta al cargar el perfil
+  bool _esPremium = false;
+  String? _errorCarga;
 
   @override
   void initState() {
@@ -35,7 +38,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
       final nombrePlan = perfil['planes']?['nombre'] ?? 'Basico';
       _esPremium = nombrePlan != 'Basico';
     } catch (_) {
-      _esPremium = true; // si falla, no bloqueamos por error nuestro
+      _esPremium = false;
     }
     await _cargar();
   }
@@ -44,9 +47,16 @@ class _ReportesScreenState extends State<ReportesScreen> {
     setState(() => _cargando = true);
     try {
       final datos = await ReportesService.cargar(_periodo);
-      if (mounted) setState(() => _datos = datos);
-    } catch (_) {
-      // deja _datos como estaba
+      if (mounted) {
+        setState(() {
+          _datos = datos;
+          _errorCarga = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _errorCarga = 'No se pudo actualizar el reporte: $error');
+      }
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
@@ -75,11 +85,56 @@ class _ReportesScreenState extends State<ReportesScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           _selectorPeriodo(),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ExportarDatosScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.ios_share),
+              label: Text(appText(context, 'Exportar', 'Export')),
+            ),
+          ),
+          if (_errorCarga != null && datos != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Material(
+                color: AppColors.redChipBg,
+                borderRadius: BorderRadius.circular(AppRadii.xl),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(_errorCarga!)),
+                      TextButton(
+                        onPressed: _cargar,
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           const SizedBox(height: 18),
           if (_cargando || datos == null)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 60),
-              child: Center(child: CircularProgressIndicator(color: AppColors.gold)),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 60),
+              child: Center(
+                child: _errorCarga == null
+                    ? CircularProgressIndicator(color: AppColors.gold)
+                    : Column(
+                        children: [
+                          Text(_errorCarga!, textAlign: TextAlign.center),
+                          TextButton(
+                            onPressed: _cargar,
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+              ),
             )
           else ...[
             if (_periodo == PeriodoReporte.hoy)
@@ -116,7 +171,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
                       fontSize: 13,
                     )),
                 if (premium && !_esPremium)
-                  const Text('🔒 Premium', style: TextStyle(fontSize: 9, color: AppColors.textTertiary)),
+                  Text('🔒 Premium', style: TextStyle(fontSize: 9, color: AppColors.textTertiary)),
               ],
             ),
           ),
@@ -126,9 +181,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
     return Row(
       children: [
-        boton('Hoy', PeriodoReporte.hoy),
-        boton('Semana', PeriodoReporte.semana),
-        boton('Mes', PeriodoReporte.mes, premium: true),
+        boton(appText(context, 'Hoy', 'Today'), PeriodoReporte.hoy),
+        boton(appText(context, 'Semana', 'Week'), PeriodoReporte.semana),
+        boton(appText(context, 'Mes', 'Month'), PeriodoReporte.mes,
+            premium: true),
       ],
     );
   }

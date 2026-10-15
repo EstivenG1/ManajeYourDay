@@ -1,65 +1,114 @@
 # MYD — Manage Your Day 📱
 
-**MYD (Manage Your Day)** es una aplicación orientada a la gestión de la productividad y las finanzas personales. Su objetivo es centralizar en una sola plataforma la organización de tareas diarias, el control de gastos y el seguimiento del progreso personal.
+MYD reúne en una aplicación Flutter la organización de tareas, las finanzas
+personales y el seguimiento de metas. Está dirigido a estudiantes, jóvenes
+profesionales y emprendedores que quieren planear sus actividades y entender
+mejor sus hábitos de gasto y productividad.
 
-El proyecto surge como una solución para estudiantes, jóvenes profesionales y emprendedores que buscan mejorar la administración de su tiempo y dinero mediante una interfaz sencilla, intuitiva y organizada.
+## Funcionalidades
 
-## 🎯 Objetivo
+### Tareas
 
-Ofrecer una herramienta que permita a los usuarios gestionar sus actividades diarias y finanzas personales, recibir recordatorios oportunos y consultar indicadores que faciliten el seguimiento de sus hábitos de productividad y control financiero.
+- Crear, consultar, editar, eliminar y completar tareas.
+- Definir prioridad, fecha y hora límite, y recordatorios locales.
+- Repetir tareas a diario, semanal o mensualmente. Al completar una ocurrencia,
+  MYD crea la siguiente.
+- Buscar tareas y filtrar por estado, prioridad y fecha.
 
-## 🚀 Funcionalidades principales
+### Finanzas
 
-* ✅ Gestión completa de tareas: crear, consultar, editar y eliminar.
-* 📌 Marcado de tareas como completadas o incumplidas.
-* 💰 Registro y consulta de gastos diarios.
-* 🏷️ Gestión de categorías de gastos.
-* 🔔 Configuración de recordatorios y notificaciones locales.
-* 📊 Dashboard diario con tareas pendientes, gastos y progreso.
-* 📈 Generación de reportes semanales.
-* 🧮 Cálculo automático del índice de productividad.
-* 📋 Consulta del historial de gastos por semana y categoría.
+- Registrar ingresos y gastos por categoría.
+- Consultar los movimientos recientes y un balance calculado con el historial
+  completo del usuario.
+- Crear, editar y eliminar presupuestos por categoría y periodo; consultar el
+  consumo y el monto disponible.
+- Recibir alertas locales al acercarse o superar el límite de un presupuesto.
+- Programar recordatorios para ingresos y pagos periódicos. **Estos avisos no
+  crean movimientos automáticamente**: el usuario registra cada movimiento.
 
-## 📊 Índice de productividad
+### Metas y reportes
 
-MYD calcula el índice de productividad a partir de las tareas completadas:
+- Crear metas de ahorro, registrar aportes y consultar su progreso e historial.
+- Definir un aporte y una frecuencia para recibir recordatorios.
+- Recibir avisos al alcanzar hitos del 25%, 50%, 75% y 100%.
+- Consultar reportes de hoy y semana; el reporte mensual depende del plan
+  asignado en Supabase.
+- Consultar gráficos, presupuestos, metas y conclusiones calculadas localmente.
+- Exportar movimientos y tareas de un rango de fechas a CSV o PDF para compartir.
 
-**Índice de productividad = (Tareas completadas / Tareas totales) × 100**
+### Cuenta y accesibilidad
 
-Este indicador permite al usuario visualizar de forma sencilla su nivel de cumplimiento y evolución.
+- Iniciar sesión con correo/contraseña o Google.
+- Editar el perfil y la foto de usuario.
+- Elegir moneda e idioma (español/inglés), modo oscuro, alto contraste, tamaño
+  del texto y activar/desactivar notificaciones.
+- Consultar historial y solicitar la eliminación definitiva de la cuenta.
 
-## 🛠️ Alcance
+La moneda elegida cambia el formato del importe, **no convierte valores ni
+consulta tasas de cambio**. La selección de idioma localiza los controles del
+sistema y algunas pantallas principales; todavía quedan textos específicos en
+español.
 
-El sistema está diseñado como una aplicación móvil autónoma, donde el usuario registra directamente sus tareas y movimientos financieros.
+Las recomendaciones del inicio son reglas locales basadas en registros y
+tendencias. No se envían datos a un modelo de IA generativa.
 
-### Incluye
+## Requisitos y ejecución
 
-* Gestión de tareas.
-* Gestión de gastos.
-* Notificaciones locales.
-* Dashboard de productividad.
-* Reportes semanales.
-* Indicadores de productividad y gastos.
+- Flutter/Dart compatible con la versión de SDK indicada en `pubspec.yaml`.
+- Proyecto Supabase configurado para autenticación, base de datos y el bucket
+  `avatars`.
 
-### No incluye
+```powershell
+flutter pub get
+flutter run
+```
 
-* Integración con bancos.
-* Ahorros compartidos.
-* Conversión automática de monedas.
-* Copias de seguridad en la nube.
+## Cambios de Supabase pendientes de aplicar
 
-## 🎓 Contexto académico
+La aplicación no ejecuta migraciones ni despliega funciones automáticamente.
+Antes de usar recurrencias de tareas, aportes programados, movimientos
+recurrentes o eliminación segura de cuenta:
 
-**MYD — Manage Your Day** es un proyecto desarrollado dentro del programa de **Análisis y Desarrollo de Software del SENA**, como propuesta para aplicar conocimientos relacionados con el levantamiento de requerimientos, diseño, desarrollo y documentación de software.
+1. Revisa y aplica
+   [`20261015000100_productivity_and_finance_extensions.sql`](./supabase/migrations/20261015000100_productivity_and_finance_extensions.sql)
+   con el flujo habitual del proyecto (`supabase db push` después de enlazar el
+   proyecto correcto). La migración amplía las tablas existentes `tareas` y
+   `metas_ahorro`, crea `movimientos_recurrentes`, activa RLS para esa tabla y
+   crea el RPC interno para borrar los datos de una cuenta.
+2. Despliega `supabase/functions/delete-account` con Supabase Functions. La
+   función valida el JWT del usuario y usa la clave `service_role` solo en el
+   entorno seguro del servidor; nunca debe incluirse en Flutter ni en el
+   repositorio.
+3. Confirma en el entorno de Supabase que las tablas existentes (`perfiles`,
+   `categorias`, `movimientos`, `presupuestos`, `tareas`, `metas_ahorro`,
+   `aportes_ahorro` y `sugerencias_texto`) usan las columnas de usuario
+   esperadas por la migración y que las políticas RLS están activas.
 
-La documentación del proyecto se encuentra estructurada bajo la **Especificación de Requerimientos de Software (ERS)** y contempla requerimientos funcionales y no funcionales, historias de usuario, casos de uso, reglas de negocio y artefactos UML.
+La eliminación es irreversible. La función borra primero los datos del usuario
+y su avatar, y después elimina su usuario de Auth. Si el RPC no está desplegado,
+la solicitud falla explícitamente y no muestra un falso éxito.
 
-## 👥 Equipo de desarrollo
+Los recordatorios son notificaciones locales del dispositivo; dependen de los
+permisos del sistema. Las ocurrencias recurrentes no se contabilizan como
+movimientos financieros automáticamente.
 
-* Johan Estiven Ríos Torres
-* Samuel Mira García
-* Estiven Garcés Abreo
-* Juan José Piedrahíta Álvarez
+## Alcance no incluido
+
+- Integración bancaria, pagos automáticos o ahorros compartidos.
+- Conversión automática entre monedas.
+- Pasarela para comprar o cambiar planes Premium.
+- Copias de seguridad descargables automáticas; la exportación CSV/PDF es
+  iniciada por el usuario.
+
+## Contexto académico y equipo
+
+MYD es un proyecto desarrollado dentro del programa de Análisis y Desarrollo de
+Software del SENA.
+
+- Johan Estiven Ríos Torres
+- Samuel Mira García
+- Estiven Garcés Abreo
+- Juan José Piedrahíta Álvarez
 
 ---
 

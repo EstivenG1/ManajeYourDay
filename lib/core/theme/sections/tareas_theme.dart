@@ -19,7 +19,7 @@ class TareasTheme extends ThemeExtension<TareasTheme> {
     required this.radioCheckbox,
   });
 
-  static const estandar = TareasTheme(
+  static TareasTheme get estandar => TareasTheme(
     prioridadAlta: AppColors.red,
     prioridadMedia: AppColors.amber,
     prioridadBaja: AppColors.textTertiary,

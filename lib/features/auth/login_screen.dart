@@ -361,7 +361,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const SizedBox(width: 8),
             Text(
               texto,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.textPrimary,
                 fontWeight: FontWeight.w600,
               ),
@@ -381,7 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
             TextSpan(text: texto),
             TextSpan(
               text: accion,
-              style: const TextStyle(
+              style: TextStyle(
                 color: AppColors.goldDeep,
                 fontWeight: FontWeight.w700,
               ),

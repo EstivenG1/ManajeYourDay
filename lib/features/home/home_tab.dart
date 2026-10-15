@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
@@ -15,8 +16,11 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   bool _cargando = true;
+  String? _errorCarga;
   double _ingresosMes = 0;
   double _gastosMes = 0;
+  double _gastosMesAnterior = 0;
+  double? _porcentajePresupuestoUsado;
   int _totalMovimientos = 0;
   List<Map<String, dynamic>> _tareasPendientes = [];
   int _tareasCompletadasMes = 0;
@@ -34,23 +38,71 @@ class _HomeTabState extends State<HomeTab> {
       final userId = supabase.auth.currentUser!.id;
       final ahora = DateTime.now();
       final inicioMes = DateTime(ahora.year, ahora.month, 1);
-      final inicioMesStr =
-          '${inicioMes.year}-${inicioMes.month.toString().padLeft(2, '0')}-01';
-
-      final movimientos = await supabase
-          .from('movimientos')
-          .select('tipo, monto')
-          .eq('usuario_id', userId)
-          .gte('fecha', inicioMesStr);
+      final inicioMesAnterior = DateTime(ahora.year, ahora.month - 1, 1);
+      final movimientos = <Map<String, dynamic>>[];
+      const tamanoPagina = 500;
+      for (var inicio = 0;; inicio += tamanoPagina) {
+        final pagina = await supabase
+            .from('movimientos')
+            .select('tipo, monto, fecha')
+            .eq('usuario_id', userId)
+            .gte(
+              'fecha',
+              '${inicioMesAnterior.year}-${inicioMesAnterior.month.toString().padLeft(2, '0')}-01',
+            )
+            .lte('fecha', _fechaTexto(ahora))
+            .order('id')
+            .range(inicio, inicio + tamanoPagina - 1);
+        movimientos.addAll(List<Map<String, dynamic>>.from(pagina));
+        if (pagina.length < tamanoPagina) break;
+      }
 
       double ingresos = 0;
       double gastos = 0;
-      for (final m in movimientos as List) {
+      double gastosAnteriores = 0;
+      var movimientosMes = 0;
+      final inicioMesTexto =
+          '${inicioMes.year}-${inicioMes.month.toString().padLeft(2, '0')}-01';
+      for (final m in movimientos) {
         final monto = (m['monto'] as num).toDouble();
-        if (m['tipo'] == 'ingreso') {
+        final estaEnEsteMes =
+            (m['fecha'] as String).compareTo(inicioMesTexto) >= 0;
+        if (estaEnEsteMes) movimientosMes++;
+        if (m['tipo'] == 'ingreso' && estaEnEsteMes) {
           ingresos += monto;
-        } else {
+        } else if (m['tipo'] == 'gasto' && estaEnEsteMes) {
           gastos += monto;
+        } else if (m['tipo'] == 'gasto') {
+          gastosAnteriores += monto;
+        }
+      }
+
+      final presupuestos = await supabase
+          .from('presupuestos')
+          .select('monto_limite, categoria_id, fecha_inicio, fecha_fin')
+          .eq('usuario_id', userId)
+          .lte('fecha_inicio', _fechaTexto(ahora))
+          .gte('fecha_fin', _fechaTexto(ahora));
+      var totalLimites = 0.0;
+      var totalGastadoPresupuestos = 0.0;
+      for (final presupuesto in presupuestos as List) {
+        totalLimites += (presupuesto['monto_limite'] as num).toDouble();
+        for (var inicio = 0;; inicio += tamanoPagina) {
+          final gastado = await supabase
+              .from('movimientos')
+              .select('monto')
+              .eq('usuario_id', userId)
+              .eq('categoria_id', presupuesto['categoria_id'])
+              .eq('tipo', 'gasto')
+              .gte('fecha', presupuesto['fecha_inicio'])
+              .lte('fecha', presupuesto['fecha_fin'])
+              .order('id')
+              .range(inicio, inicio + tamanoPagina - 1);
+          totalGastadoPresupuestos += (gastado as List).fold<double>(
+            0,
+            (sum, item) => sum + (item['monto'] as num).toDouble(),
+          );
+          if (gastado.length < tamanoPagina) break;
         }
       }
 
@@ -75,35 +127,70 @@ class _HomeTabState extends State<HomeTab> {
       setState(() {
         _ingresosMes = ingresos;
         _gastosMes = gastos;
-        _totalMovimientos = movimientos.length;
+        _gastosMesAnterior = gastosAnteriores;
+        _porcentajePresupuestoUsado = totalLimites <= 0
+            ? null
+            : totalGastadoPresupuestos / totalLimites * 100;
+        _totalMovimientos = movimientosMes;
         _tareasPendientes = List<Map<String, dynamic>>.from(tareasPend);
         _tareasCompletadasMes = completadas;
         _tareasTotalesMes = tareasMes.length;
         _cargando = false;
+        _errorCarga = null;
       });
-    } catch (_) {
-      if (mounted) setState(() => _cargando = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _errorCarga = 'No se pudieron cargar los datos del inicio: $error';
+        });
+      }
     }
   }
+
+  String _fechaTexto(DateTime fecha) =>
+      '${fecha.year}-${fecha.month.toString().padLeft(2, '0')}-${fecha.day.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
     if (_cargando) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.gold));
+      return Center(child: CircularProgressIndicator(color: AppColors.gold));
+    }
+    if (_errorCarga != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_errorCarga!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _cargarDatos,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Reintentar'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     final hoy = formatearFechaEs(DateTime.now());
-    final consejos = generarConsejosIA(
+    final consejos = generarRecomendacionesLocales(
       ingresosMes: _ingresosMes,
       gastosMes: _gastosMes,
       tareasPendientes: _tareasPendientes.length,
       tareasCompletadas: _tareasCompletadasMes,
       tareasTotales: _tareasTotalesMes,
+      gastosMesAnterior: _gastosMesAnterior,
+      porcentajePresupuestoUsado: _porcentajePresupuestoUsado,
     );
     final balanceMes = _ingresosMes - _gastosMes;
-    final productividad = _tareasTotalesMes == 0
-        ? 0.0
-        : (_tareasCompletadasMes / _tareasTotalesMes) * 100;
+    final productividad = calcularIndiceProductividad(
+      completadas: _tareasCompletadasMes,
+      totales: _tareasTotalesMes,
+    );
 
     return RefreshIndicator(
       color: AppColors.gold,
@@ -113,7 +200,11 @@ class _HomeTabState extends State<HomeTab> {
         children: [
           Text(hoy, style: AppTypography.secondary),
           const SizedBox(height: 4),
-          Text('¡Hola, ${widget.nombre ?? "de nuevo"}! 👋', style: AppTypography.greeting),
+          Text(
+            appText(context, '¡Hola, ${widget.nombre ?? "de nuevo"}! 👋',
+                'Hello, ${widget.nombre ?? "again"}! 👋'),
+            style: AppTypography.greeting,
+          ),
           const SizedBox(height: 20),
 
           _tarjetaBalance(),
@@ -151,7 +242,7 @@ class _HomeTabState extends State<HomeTab> {
           ],
 
           const SizedBox(height: 20),
-          _seccionConsejosIA(consejos),
+          _seccionRecomendaciones(consejos),
           const SizedBox(height: 12),
         ],
       ),
@@ -336,7 +427,7 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
-  Widget _seccionConsejosIA(List<String> consejos) {
+  Widget _seccionRecomendaciones(List<String> consejos) {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -352,13 +443,22 @@ class _HomeTabState extends State<HomeTab> {
               const Text('✨ ', style: TextStyle(fontSize: 16)),
               Expanded(
                 child: Text(
-                  'RECOMENDACIONES PARA TI',
+                  appText(context, 'RECOMENDACIONES PARA TI', 'SUGGESTIONS FOR YOU'),
                   style: AppTypography.sectionLabel.copyWith(color: AppColors.goldDeep),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            appText(
+              context,
+              'Sugerencias basadas en tus registros; no se usa IA generativa.',
+              'Suggestions based on your records; no generative AI is used.',
+            ),
+            style: AppTypography.secondary.copyWith(fontSize: 11),
           ),
           const SizedBox(height: 12),
           ...consejos.map(

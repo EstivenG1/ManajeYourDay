@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/notification_service.dart';
@@ -15,9 +16,19 @@ class TareasScreen extends StatefulWidget {
 enum _Filtro { todas, pendientes, completadas }
 
 class _TareasScreenState extends State<TareasScreen> {
+  final _buscarCtrl = TextEditingController();
   bool _cargando = true;
+  String? _errorCarga;
   List<Map<String, dynamic>> _tareas = [];
   _Filtro _filtro = _Filtro.pendientes;
+  String? _prioridadFiltro;
+  DateTime? _fechaFiltro;
+
+  @override
+  void dispose() {
+    _buscarCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -26,7 +37,10 @@ class _TareasScreenState extends State<TareasScreen> {
   }
 
   Future<void> _cargarTareas() async {
-    setState(() => _cargando = true);
+    setState(() {
+      _cargando = true;
+      _errorCarga = null;
+    });
     try {
       final userId = supabase.auth.currentUser!.id;
       final data = await supabase
@@ -38,55 +52,179 @@ class _TareasScreenState extends State<TareasScreen> {
         setState(() {
           _tareas = List<Map<String, dynamic>>.from(data);
           _cargando = false;
+          _errorCarga = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _cargando = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _errorCarga = 'No se pudieron cargar tus tareas: $e';
+        });
+      }
     }
   }
 
   List<Map<String, dynamic>> get _tareasFiltradas {
-    switch (_filtro) {
-      case _Filtro.pendientes:
-        return _tareas.where((t) => t['estado'] == 'pendiente').toList();
-      case _Filtro.completadas:
-        return _tareas.where((t) => t['estado'] == 'completada').toList();
-      case _Filtro.todas:
-        return _tareas;
-    }
+    return _tareas.where((tarea) {
+      final estadoCoincide = switch (_filtro) {
+        _Filtro.pendientes => tarea['estado'] == 'pendiente',
+        _Filtro.completadas => tarea['estado'] == 'completada',
+        _Filtro.todas => true,
+      };
+      final textoCoincide = _buscarCtrl.text.trim().isEmpty ||
+          (tarea['titulo'] as String)
+              .toLowerCase()
+              .contains(_buscarCtrl.text.trim().toLowerCase());
+      final prioridadCoincide = _prioridadFiltro == null ||
+          tarea['prioridad'] == _prioridadFiltro;
+      final fecha = DateTime.parse(tarea['fecha_limite']);
+      final fechaCoincide = _fechaFiltro == null ||
+          (fecha.year == _fechaFiltro!.year &&
+              fecha.month == _fechaFiltro!.month &&
+              fecha.day == _fechaFiltro!.day);
+      return estadoCoincide &&
+          textoCoincide &&
+          prioridadCoincide &&
+          fechaCoincide;
+    }).toList();
   }
 
   Future<void> _alternarEstado(Map<String, dynamic> tarea) async {
     final nuevoEstado = tarea['estado'] == 'completada'
         ? 'pendiente'
         : 'completada';
+    final estadoAnterior = tarea['estado'];
+    final completadoAnterior = tarea['completado_en'];
     setState(() {
       tarea['estado'] = nuevoEstado;
       tarea['completado_en'] = nuevoEstado == 'completada'
           ? DateTime.now().toIso8601String()
           : null;
     });
-    await supabase
-        .from('tareas')
-        .update({
-          'estado': nuevoEstado,
-          'completado_en': tarea['completado_en'],
-        })
-        .eq('id', tarea['id']);
-
-    if (nuevoEstado == 'completada') {
-      // Ya no hace falta recordarle una tarea que ya completó.
-      await NotificationService.cancelarRecordatorioTarea(tarea['id']);
-    } else {
-      // Se marcó de nuevo como pendiente: si la fecha límite sigue en
-      // el futuro, se vuelve a programar el recordatorio.
-      final fechaLimite = DateTime.parse(tarea['fecha_limite']);
-      await NotificationService.programarRecordatorioTarea(
-        tareaId: tarea['id'],
-        titulo: tarea['titulo'],
-        fechaLimite: fechaLimite,
+    try {
+      await supabase
+          .from('tareas')
+          .update({
+            'estado': nuevoEstado,
+            'completado_en': tarea['completado_en'],
+          })
+          .eq('id', tarea['id']);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        tarea['estado'] = estadoAnterior;
+        tarea['completado_en'] = completadoAnterior;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('No se pudo actualizar la tarea: $error')),
       );
+      return;
     }
+
+    try {
+      if (nuevoEstado == 'completada') {
+        await NotificationService.cancelarRecordatorioTarea(tarea['id']);
+        await _crearSiguienteTareaRecurrente(tarea);
+      } else {
+        final fechaLimite = DateTime.parse(tarea['fecha_limite']);
+        await NotificationService.programarRecordatorioTarea(
+          tareaId: tarea['id'],
+          titulo: tarea['titulo'],
+          fechaLimite: fechaLimite,
+        );
+      }
+      _cargarTareas();
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              nuevoEstado == 'completada'
+                  ? 'La tarea se completó, pero no se pudo programar su siguiente repetición: $error'
+                  : 'La tarea se actualizó, pero no se pudo programar el recordatorio: $error',
+            ),
+          ),
+        );
+      }
+      _cargarTareas();
+    }
+  }
+
+  Future<void> _crearSiguienteTareaRecurrente(
+      Map<String, dynamic> tarea) async {
+    final recurrencia = tarea['recurrencia'] as String? ?? 'ninguna';
+    if (recurrencia == 'ninguna') return;
+
+    final existente = await supabase
+        .from('tareas')
+        .select('id')
+        .eq('recurrencia_padre_id', tarea['id'])
+        .maybeSingle();
+    if (existente != null) return;
+
+    final anterior = DateTime.parse(tarea['fecha_limite']);
+    DateTime siguiente;
+    switch (recurrencia) {
+      case 'diaria':
+        siguiente = anterior.add(const Duration(days: 1));
+      case 'semanal':
+        siguiente = anterior.add(const Duration(days: 7));
+      case 'mensual':
+        siguiente = _sumarMes(anterior);
+      default:
+        return;
+    }
+    final ahora = DateTime.now();
+    while (!siguiente.isAfter(ahora)) {
+      switch (recurrencia) {
+        case 'diaria':
+          siguiente = siguiente.add(const Duration(days: 1));
+        case 'semanal':
+          siguiente = siguiente.add(const Duration(days: 7));
+        case 'mensual':
+          siguiente = _sumarMes(siguiente);
+        default:
+          return;
+      }
+    }
+
+    final usuarioId = supabase.auth.currentUser!.id;
+    final nueva = await supabase
+        .from('tareas')
+        .insert({
+          'usuario_id': usuarioId,
+          'titulo': tarea['titulo'],
+          'descripcion': tarea['descripcion'],
+          'fecha_limite': siguiente.toIso8601String(),
+          'prioridad': tarea['prioridad'],
+          'estado': 'pendiente',
+          'recurrencia': recurrencia,
+          'recurrencia_padre_id': tarea['id'],
+        })
+        .select('id')
+        .single();
+    await NotificationService.programarRecordatorioTarea(
+      tareaId: nueva['id'],
+      titulo: tarea['titulo'],
+      fechaLimite: siguiente,
+    );
+  }
+
+  DateTime _sumarMes(DateTime fecha) {
+    final primerDiaMesSiguiente = DateTime(fecha.year, fecha.month + 1, 1);
+    final ultimoDiaMesSiguiente =
+        DateTime(primerDiaMesSiguiente.year, primerDiaMesSiguiente.month + 1, 0);
+    final dia = fecha.day < ultimoDiaMesSiguiente.day
+        ? fecha.day
+        : ultimoDiaMesSiguiente.day;
+    return DateTime(
+      primerDiaMesSiguiente.year,
+      primerDiaMesSiguiente.month,
+      dia,
+      fecha.hour,
+      fecha.minute,
+    );
   }
 
   Future<void> _eliminarTarea(Map<String, dynamic> tarea) async {
@@ -102,7 +240,7 @@ class _TareasScreenState extends State<TareasScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(
+            child: Text(
               'Eliminar',
               style: TextStyle(color: AppColors.red),
             ),
@@ -125,20 +263,120 @@ class _TareasScreenState extends State<TareasScreen> {
     if (resultado == true) _cargarTareas();
   }
 
+  Future<void> _filtrarPorFecha() async {
+    final seleccion = await showDatePicker(
+      context: context,
+      initialDate: _fechaFiltro ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+      helpText: 'Ver tareas de una fecha',
+    );
+    if (seleccion != null) setState(() => _fechaFiltro = seleccion);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       body: _cargando
-          ? const Center(
+          ? Center(
               child: CircularProgressIndicator(color: AppColors.gold),
             )
+          : _errorCarga != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_errorCarga!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: _cargarTareas,
+                          icon: const Icon(Icons.refresh),
+                          label: Text(appText(context, 'Reintentar', 'Retry')),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargarTareas,
               child: Column(
                 children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                    child: TextField(
+                      controller: _buscarCtrl,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: appText(context, 'Buscar tareas', 'Search tasks'),
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _buscarCtrl.text.isEmpty
+                            ? null
+                            : IconButton(
+                                tooltip: 'Limpiar búsqueda',
+                                onPressed: () {
+                                  _buscarCtrl.clear();
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.close),
+                              ),
+                      ),
+                    ),
+                  ),
                   _barraFiltros(),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String?>(
+                            initialValue: _prioridadFiltro,
+                            decoration: InputDecoration(
+                              labelText: appText(context, 'Prioridad', 'Priority'),
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                            ),
+                            items: [
+                              DropdownMenuItem(
+                                  value: null,
+                                  child: Text(appText(context, 'Todas', 'All'))),
+                              DropdownMenuItem(
+                                  value: 'alta',
+                                  child: Text(appText(context, 'Alta', 'High'))),
+                              DropdownMenuItem(
+                                  value: 'media',
+                                  child: Text(
+                                      appText(context, 'Media', 'Medium'))),
+                              DropdownMenuItem(
+                                  value: 'baja',
+                                  child: Text(appText(context, 'Baja', 'Low'))),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => _prioridadFiltro = value),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton.icon(
+                          onPressed: _filtrarPorFecha,
+                          icon: const Icon(Icons.calendar_month),
+                          label: Text(_fechaFiltro == null
+                              ? appText(context, 'Fecha', 'Date')
+                              : '${_fechaFiltro!.day}/${_fechaFiltro!.month}'),
+                        ),
+                        if (_fechaFiltro != null)
+                          IconButton(
+                            tooltip: 'Quitar filtro de fecha',
+                            onPressed: () => setState(() => _fechaFiltro = null),
+                            icon: const Icon(Icons.clear),
+                          ),
+                      ],
+                    ),
+                  ),
                   Expanded(
                     child: _tareasFiltradas.isEmpty
                         ? _estadoVacio()
@@ -184,9 +422,9 @@ class _TareasScreenState extends State<TareasScreen> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          chip('Pendientes', _Filtro.pendientes),
-          chip('Completadas', _Filtro.completadas),
-          chip('Todas', _Filtro.todas),
+          chip(appText(context, 'Pendientes', 'Pending'), _Filtro.pendientes),
+          chip(appText(context, 'Completadas', 'Completed'), _Filtro.completadas),
+          chip(appText(context, 'Todas', 'All'), _Filtro.todas),
         ],
       ),
     );
@@ -203,8 +441,10 @@ class _TareasScreenState extends State<TareasScreen> {
             const SizedBox(height: 12),
             Text(
               _filtro == _Filtro.completadas
-                  ? 'Aún no completas ninguna tarea.'
-                  : 'No tienes tareas por aquí.\nToca + para crear una.',
+                  ? appText(context, 'Aún no completas ninguna tarea.',
+                      'You have not completed any tasks yet.')
+                  : appText(context, 'No tienes tareas por aquí.\nToca + para crear una.',
+                      'No tasks here yet.\nTap + to create one.'),
               textAlign: TextAlign.center,
               style: AppTypography.secondary,
             ),
@@ -270,7 +510,7 @@ class _TareasScreenState extends State<TareasScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.schedule,
                         size: 13,
                         color: AppColors.textTertiary,
@@ -308,7 +548,7 @@ class _TareasScreenState extends State<TareasScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(
+            icon: Icon(
               Icons.delete_outline,
               color: AppColors.textTertiary,
               size: 20,

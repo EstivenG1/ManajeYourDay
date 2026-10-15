@@ -29,7 +29,7 @@ class FinanzasTheme extends ThemeExtension<FinanzasTheme> {
     required this.radioChip,
   });
 
-  static const estandar = FinanzasTheme(
+  static FinanzasTheme get estandar => FinanzasTheme(
     colorIngreso: AppColors.green,
     colorGasto: AppColors.red,
     gradienteBotonIngreso: AppColors.greenGradient,

@@ -107,11 +107,20 @@ class ReportesService {
 
     // Traemos movimientos desde el inicio del periodo ANTERIOR hasta hoy,
     // así con una sola consulta cubrimos actual + anterior para comparar.
-    final movimientos = await supabase
-        .from('movimientos')
-        .select('tipo, monto, fecha, categorias(nombre)')
-        .eq('usuario_id', userId)
-        .gte('fecha', fmt(inicioAnterior));
+    final movimientos = <Map<String, dynamic>>[];
+    const tamanoPagina = 500;
+    for (var inicio = 0;; inicio += tamanoPagina) {
+      final pagina = await supabase
+          .from('movimientos')
+          .select('tipo, monto, fecha, categorias(nombre)')
+          .eq('usuario_id', userId)
+          .gte('fecha', fmt(inicioAnterior))
+          .lte('fecha', fmt(hoy))
+          .order('id')
+          .range(inicio, inicio + tamanoPagina - 1);
+      movimientos.addAll(List<Map<String, dynamic>>.from(pagina));
+      if (pagina.length < tamanoPagina) break;
+    }
 
     double ingActual = 0, gasActual = 0, ingAnterior = 0, gasAnterior = 0;
     final categorias = <String, double>{};
@@ -121,7 +130,7 @@ class ReportesService {
     final gastosPorDiaDelMes = <int, double>{};
     final actividadPorDia = <int, int>{};
 
-    for (final m in movimientos as List) {
+    for (final m in movimientos) {
       final fecha = DateTime.parse(m['fecha']);
       final monto = (m['monto'] as num).toDouble();
       final esIngreso = m['tipo'] == 'ingreso';
@@ -165,7 +174,7 @@ class ReportesService {
       etiquetas = ['L', 'M', 'X', 'J', 'V', 'S', 'D'];
       ingresosSerie = List.filled(7, 0);
       gastosSerie = List.filled(7, 0);
-      for (final m in movimientos as List) {
+      for (final m in movimientos) {
         final fecha = DateTime.parse(m['fecha']);
         if (fecha.isBefore(inicioActual)) continue;
         final i = fecha.weekday - 1;
@@ -187,7 +196,7 @@ class ReportesService {
       etiquetas = ['Sem 1', 'Sem 2', 'Sem 3', 'Sem 4', 'Sem 5'];
       ingresosSerie = List.filled(5, 0);
       gastosSerie = List.filled(5, 0);
-      for (final m in movimientos as List) {
+      for (final m in movimientos) {
         final fecha = DateTime.parse(m['fecha']);
         if (fecha.isBefore(inicioActual)) continue;
         final semanaIndex = ((fecha.day - 1) / 7).floor().clamp(0, 4);
@@ -284,7 +293,25 @@ class ReportesService {
 
     final presupuestos = <Map<String, dynamic>>[];
     for (final p in presupuestosRaw as List) {
-      final gastado = categorias[p['categorias']?['nombre']] ?? 0.0;
+      var gastado = 0.0;
+      for (var inicio = 0;; inicio += tamanoPagina) {
+        final gastosPresupuesto = await supabase
+            .from('movimientos')
+            .select('monto')
+            .eq('usuario_id', userId)
+            .eq('categoria_id', p['categoria_id'])
+            .eq('tipo', 'gasto')
+            .gte('fecha', p['fecha_inicio'])
+            .lte('fecha', p['fecha_fin'])
+            .order('id')
+            .range(inicio, inicio + tamanoPagina - 1);
+        gastado += (gastosPresupuesto as List).fold<double>(
+          0,
+          (total, movimiento) =>
+              total + (movimiento['monto'] as num).toDouble(),
+        );
+        if (gastosPresupuesto.length < tamanoPagina) break;
+      }
       presupuestos.add({
         'nombre': p['categorias']?['nombre'] ?? 'General',
         'limite': (p['monto_limite'] as num).toDouble(),

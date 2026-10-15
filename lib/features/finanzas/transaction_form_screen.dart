@@ -23,6 +23,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   DateTime _fecha = DateTime.now();
   int? _categoriaId;
   bool _cargando = true;
+  String? _errorCarga;
 
   List<Map<String, dynamic>> _categorias = [];
   List<String> _sugerenciasDescripcion = [];
@@ -42,6 +43,10 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
   }
 
   Future<void> _cargarDatos() async {
+    setState(() {
+      _cargando = true;
+      _errorCarga = null;
+    });
     try {
       final categorias = await supabase
           .from('categorias')
@@ -58,10 +63,16 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           _sugerenciasDescripcion = sugerencias;
           _categoriaId ??= _categorias.isNotEmpty ? _categorias.first['id'] as int : null;
           _cargando = false;
+          _errorCarga = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _cargando = false);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _errorCarga = 'No se pudieron cargar las categorías: $error';
+        });
+      }
     }
   }
 
@@ -146,7 +157,24 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(title: Text(_editando ? 'Editar movimiento' : 'Nuevo movimiento')),
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: _errorCarga != null
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_errorCarga!, textAlign: TextAlign.center),
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _cargarDatos,
+                        child: const Text('Reintentar'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : SingleChildScrollView(
           padding: const EdgeInsets.all(20),
           child: Form(
             key: _formKey,
@@ -185,7 +213,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                 Text('CATEGORÍA', style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
                 _cargando
-                    ? const Padding(
+                    ? Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
                         child: CircularProgressIndicator(color: AppColors.gold),
                       )
@@ -241,7 +269,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.calendar_today, color: AppColors.gold, size: 18),
+                        Icon(Icons.calendar_today, color: AppColors.gold, size: 18),
                         const SizedBox(width: 8),
                         Text(
                           '${_fecha.day.toString().padLeft(2, '0')}/${_fecha.month.toString().padLeft(2, '0')}/${_fecha.year}',
@@ -350,7 +378,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                   final opcion = options.elementAt(i);
                   return ListTile(
                     dense: true,
-                    leading: const Icon(Icons.history, color: AppColors.gold, size: 18),
+                    leading: Icon(Icons.history, color: AppColors.gold, size: 18),
                     title: Text(opcion, style: AppTypography.itemTitle),
                     onTap: () => onSelected(opcion),
                   );

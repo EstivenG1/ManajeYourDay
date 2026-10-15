@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
 import 'transaction_form_screen.dart';
 import '../metas/metas_screen.dart';
+import 'presupuestos_screen.dart';
+import 'movimientos_recurrentes_screen.dart';
+import '../reportes/exportar_datos_screen.dart';
 
 class FinanzasScreen extends StatefulWidget {
   const FinanzasScreen({super.key});
@@ -14,6 +18,7 @@ class FinanzasScreen extends StatefulWidget {
 
 class _FinanzasScreenState extends State<FinanzasScreen> {
   bool _cargando = true;
+  String? _errorCarga;
   List<Map<String, dynamic>> _movimientos = [];
   double _ingresos = 0;
   double _gastos = 0;
@@ -25,7 +30,10 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   }
 
   Future<void> _cargar() async {
-    setState(() => _cargando = true);
+    setState(() {
+      _cargando = true;
+      _errorCarga = null;
+    });
     try {
       final userId = supabase.auth.currentUser!.id;
       final data = await supabase
@@ -36,8 +44,23 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
           .order('creado_en', ascending: false)
           .limit(50);
 
+      final totales = <Map<String, dynamic>>[];
+      var inicio = 0;
+      const tamanoPagina = 500;
+      while (true) {
+        final pagina = await supabase
+            .from('movimientos')
+            .select('tipo, monto')
+            .eq('usuario_id', userId)
+            .order('id')
+            .range(inicio, inicio + tamanoPagina - 1);
+        totales.addAll(List<Map<String, dynamic>>.from(pagina));
+        if (pagina.length < tamanoPagina) break;
+        inicio += tamanoPagina;
+      }
+
       double ingresos = 0, gastos = 0;
-      for (final m in data as List) {
+      for (final m in totales) {
         final monto = (m['monto'] as num).toDouble();
         if (m['tipo'] == 'ingreso') {
           ingresos += monto;
@@ -52,10 +75,16 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
           _ingresos = ingresos;
           _gastos = gastos;
           _cargando = false;
+          _errorCarga = null;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _cargando = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+          _errorCarga = 'No se pudieron cargar tus movimientos: $e';
+        });
+      }
     }
   }
 
@@ -79,7 +108,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text('Eliminar', style: TextStyle(color: AppColors.red)),
+            child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
@@ -97,7 +126,9 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       body: _cargando
-          ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+          ? Center(child: CircularProgressIndicator(color: AppColors.gold))
+          : _errorCarga != null
+              ? _estadoErrorCarga()
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -107,7 +138,25 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                   _tarjetaBalance(finanzas),
                   const SizedBox(height: 14),
                   _botonMetas(),
+                  const SizedBox(height: 10),
+                  _botonPresupuestos(),
                   const SizedBox(height: 16),
+                  _botonRecurrentes(),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ExportarDatosScreen(),
+                        ),
+                      ),
+                      icon: const Icon(Icons.ios_share),
+                      label: Text(appText(
+                          context, 'Exportar movimientos', 'Export transactions')),
+                    ),
+                  ),
                   Row(
                     children: [
                       Expanded(
@@ -128,13 +177,18 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  Text('MOVIMIENTOS RECIENTES', style: AppTypography.sectionLabel),
+                  Text(
+                    appText(context, 'MOVIMIENTOS RECIENTES', 'RECENT TRANSACTIONS'),
+                    style: AppTypography.sectionLabel,
+                  ),
                   const SizedBox(height: 10),
                   if (_movimientos.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 40),
                       child: Center(
-                        child: Text('Aún no tienes movimientos registrados.',
+                        child: Text(appText(context,
+                                'Aún no tienes movimientos registrados.',
+                                'No transactions recorded yet.'),
                             style: AppTypography.secondary),
                       ),
                     )
@@ -143,6 +197,28 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _estadoErrorCarga() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_outlined, color: AppColors.red, size: 38),
+            const SizedBox(height: 12),
+            Text(_errorCarga!, textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _cargar,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Reintentar'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -165,10 +241,71 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             const Text('🎯', style: TextStyle(fontSize: 20)),
             const SizedBox(width: 10),
             Expanded(
-              child: Text('Metas de ahorro',
+              child: Text(appText(context, 'Metas de ahorro', 'Savings goals'),
                   style: AppTypography.itemTitle.copyWith(color: AppColors.goldDeep)),
             ),
-            const Icon(Icons.chevron_right, color: AppColors.goldDeep, size: 20),
+            Icon(Icons.chevron_right, color: AppColors.goldDeep, size: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _botonPresupuestos() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.xl2),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const PresupuestosScreen()),
+      ).then((_) => _cargar()),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.xl2),
+          border: Border.all(color: AppColors.borderSoft),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.account_balance_wallet_outlined, color: AppColors.gold),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(appText(context, 'Gestionar presupuestos', 'Manage budgets'),
+                  style: AppTypography.itemTitle),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.textTertiary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _botonRecurrentes() {
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.xl2),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const MovimientosRecurrentesScreen(),
+        ),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(AppRadii.xl2),
+          border: Border.all(color: AppColors.borderSoft),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.repeat, color: AppColors.gold),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(appText(context, 'Ingresos y pagos recurrentes',
+                      'Recurring income and bills'),
+                  style: AppTypography.itemTitle),
+            ),
+            Icon(Icons.chevron_right, color: AppColors.textTertiary),
           ],
         ),
       ),
@@ -188,7 +325,8 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('BALANCE DISPONIBLE', style: AppTypography.sectionLabel),
+          Text(appText(context, 'BALANCE DISPONIBLE', 'AVAILABLE BALANCE'),
+              style: AppTypography.sectionLabel),
           const SizedBox(height: 6),
           Text(formatearMonto(balance), style: AppTypography.balanceDisplay),
           const SizedBox(height: 16),
@@ -297,7 +435,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
           Text('${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
               style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14)),
           IconButton(
-            icon: const Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 18),
+            icon: Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 18),
             onPressed: () => _eliminar(m),
           ),
         ],

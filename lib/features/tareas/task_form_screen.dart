@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
@@ -21,6 +22,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   late DateTime _fecha;
   late TimeOfDay _hora;
   String _prioridad = 'media';
+  String _recurrencia = 'ninguna';
   bool _guardando = true;
 
   List<String> _sugerenciasTitulo = [];
@@ -39,6 +41,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       _hora = TimeOfDay(hour: fechaLimite.hour, minute: fechaLimite.minute);
       _descripcionCtrl.text = tarea['descripcion'] ?? '';
       _prioridad = tarea['prioridad'] ?? 'media';
+      _recurrencia = tarea['recurrencia'] ?? 'ninguna';
     } else {
       final ahora = DateTime.now();
       _fecha = ahora;
@@ -115,6 +118,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             : _descripcionCtrl.text.trim(),
         'fecha_limite': fechaLimite.toIso8601String(),
         'prioridad': _prioridad,
+        'recurrencia': _recurrencia,
       };
 
       String tareaId;
@@ -162,7 +166,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
-      appBar: AppBar(title: Text(_editando ? 'Editar tarea' : 'Nueva tarea')),
+      appBar: AppBar(
+        title: Text(_editando
+            ? appText(context, 'Editar tarea', 'Edit task')
+            : appText(context, 'Nueva tarea', 'New task')),
+      ),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -171,26 +179,28 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('TÍTULO', style: AppTypography.sectionLabel),
+                Text(appText(context, 'TÍTULO', 'TITLE'),
+                    style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
                 _campoTituloConAutocompletado(),
                 const SizedBox(height: 20),
 
                 Text(
-                  'DESCRIPCIÓN (opcional)',
+                  appText(context, 'DESCRIPCIÓN (opcional)', 'DESCRIPTION (optional)'),
                   style: AppTypography.sectionLabel,
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descripcionCtrl,
                   maxLines: 2,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Detalles de la tarea...',
                   ),
                 ),
                 const SizedBox(height: 20),
 
-                Text('FECHA Y HORA LÍMITE', style: AppTypography.sectionLabel),
+                Text(appText(context, 'FECHA Y HORA LÍMITE', 'DUE DATE AND TIME'),
+                    style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -216,7 +226,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 if (_sugerenciasHora.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(
-                    'Horas que usas seguido:',
+                    appText(context, 'Horas que usas seguido:', 'Frequently used times:'),
                     style: AppTypography.secondary.copyWith(
                       color: AppColors.textTertiary,
                     ),
@@ -266,9 +276,45 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ],
                 const SizedBox(height: 20),
 
-                Text('PRIORIDAD', style: AppTypography.sectionLabel),
+                Text(appText(context, 'PRIORIDAD', 'PRIORITY'),
+                    style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
                 _selectorPrioridad(tema),
+                const SizedBox(height: 20),
+                Text(appText(context, 'REPETICIÓN', 'REPEAT'),
+                    style: AppTypography.sectionLabel),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  initialValue: _recurrencia,
+                  items: [
+                    DropdownMenuItem(
+                        value: 'ninguna',
+                        child: Text(appText(context, 'No se repite', 'Does not repeat'))),
+                    DropdownMenuItem(
+                        value: 'diaria',
+                        child: Text(appText(context, 'Cada día', 'Daily'))),
+                    DropdownMenuItem(
+                        value: 'semanal',
+                        child: Text(appText(context, 'Cada semana', 'Weekly'))),
+                    DropdownMenuItem(
+                        value: 'mensual',
+                        child: Text(appText(context, 'Cada mes', 'Monthly'))),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _recurrencia = value);
+                  },
+                ),
+                if (_recurrencia != 'ninguna') ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    appText(
+                      context,
+                      'Al completar esta tarea se creará la siguiente ocurrencia.',
+                      'Completing this task creates its next occurrence.',
+                    ),
+                    style: AppTypography.secondary,
+                  ),
+                ],
                 const SizedBox(height: 32),
 
                 SizedBox(
@@ -295,7 +341,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                                   ),
                                 )
                               : Text(
-                                  _editando ? 'Guardar cambios' : 'Crear tarea',
+                                  _editando
+                                      ? appText(context, 'Guardar cambios', 'Save changes')
+                                      : appText(context, 'Crear tarea', 'Create task'),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
@@ -329,7 +377,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         return TextFormField(
           controller: controller,
           focusNode: focusNode,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'Ej: Revisar informe financiero',
             prefixIcon: Icon(Icons.edit_note, color: AppColors.gold),
           ),
@@ -359,7 +407,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                   final opcion = options.elementAt(i);
                   return ListTile(
                     dense: true,
-                    leading: const Icon(
+                    leading: Icon(
                       Icons.history,
                       color: AppColors.gold,
                       size: 18,

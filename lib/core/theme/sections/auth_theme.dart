@@ -17,7 +17,7 @@ class AuthTheme extends ThemeExtension<AuthTheme> {
     required this.radioBotones,
   });
 
-  static const estandar = AuthTheme(
+  static AuthTheme get estandar => AuthTheme(
     gradienteFondoSplash: AppColors.bgSplashGradient,
     gradienteLogo: AppColors.goldGradient,
     radioCampos: AppRadii.xl2,

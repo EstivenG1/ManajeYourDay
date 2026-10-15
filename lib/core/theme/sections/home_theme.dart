@@ -17,7 +17,7 @@ class HomeTheme extends ThemeExtension<HomeTheme> {
     required this.radioModulo,
   });
 
-  static const estandar = HomeTheme(
+  static HomeTheme get estandar => HomeTheme(
     acento: AppColors.gold,
     gradienteBalance: AppColors.goldGradient,
     radioTarjetaBalance: AppRadii.xl3,

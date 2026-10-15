@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/services/notification_service.dart';
 
 const _iconosDisponibles = ['🎯', '🏖️', '🚗', '🏠', '🎓', '💍', '📱', '✈️', '🎁', '💻'];
 
@@ -16,8 +17,10 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nombreCtrl = TextEditingController();
   final _objetivoCtrl = TextEditingController();
+  final _aporteCtrl = TextEditingController();
   DateTime? _fechaLimite;
   String _icono = '🎯';
+  String _frecuenciaAporte = 'mensual';
   bool _guardando = false;
 
   bool get _editando => widget.meta != null;
@@ -28,6 +31,10 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
     if (widget.meta != null) {
       _nombreCtrl.text = widget.meta!['nombre'] ?? '';
       _objetivoCtrl.text = (widget.meta!['monto_objetivo'] as num).toString();
+      _aporteCtrl.text =
+          (widget.meta!['aporte_programado'] as num?)?.toString() ?? '';
+      _frecuenciaAporte =
+          widget.meta!['frecuencia_aporte'] as String? ?? 'mensual';
       _icono = widget.meta!['icono'] ?? '🎯';
       if (widget.meta!['fecha_limite'] != null) {
         _fechaLimite = DateTime.parse(widget.meta!['fecha_limite']);
@@ -39,6 +46,7 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
   void dispose() {
     _nombreCtrl.dispose();
     _objetivoCtrl.dispose();
+    _aporteCtrl.dispose();
     super.dispose();
   }
 
@@ -62,22 +70,54 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
         'nombre': _nombreCtrl.text.trim(),
         'monto_objetivo': double.parse(_objetivoCtrl.text.replaceAll(',', '.')),
         'icono': _icono,
+        'aporte_programado': double.tryParse(
+              _aporteCtrl.text.replaceAll(',', '.'),
+            ) ??
+            0,
+        'frecuencia_aporte': _frecuenciaAporte,
+        'proximo_aporte': _aporteCtrl.text.trim().isEmpty
+            ? null
+            : _fechaProximoAporte(DateTime.now(), _frecuenciaAporte)
+                .toIso8601String()
+                .split('T')
+                .first,
         'fecha_limite': _fechaLimite != null
             ? '${_fechaLimite!.year}-${_fechaLimite!.month.toString().padLeft(2, '0')}-${_fechaLimite!.day.toString().padLeft(2, '0')}'
             : null,
       };
 
+      late String metaId;
       if (_editando) {
-        await supabase.from('metas_ahorro').update(datos).eq('id', widget.meta!['id']);
+        metaId = widget.meta!['id'].toString();
+        await supabase
+            .from('metas_ahorro')
+            .update(datos)
+            .eq('id', metaId);
       } else {
-        await supabase.from('metas_ahorro').insert({
-          ...datos,
-          'usuario_id': userId,
-          'monto_actual': 0,
-          'estado': 'activa',
-        });
+        final creada = await supabase
+            .from('metas_ahorro')
+            .insert({
+              ...datos,
+              'usuario_id': userId,
+              'monto_actual': 0,
+              'estado': 'activa',
+            })
+            .select('id')
+            .single();
+        metaId = creada['id'].toString();
       }
 
+      if ((datos['aporte_programado'] as double) > 0) {
+        await NotificationService.programarRecordatorioMeta(
+          metaId: metaId,
+          nombre: datos['nombre'] as String,
+          aporte: datos['aporte_programado'] as double,
+          frecuencia: _frecuenciaAporte,
+          proximoAporte: DateTime.parse(datos['proximo_aporte'] as String),
+        );
+      } else {
+        await NotificationService.cancelarRecordatorioMeta(metaId);
+      }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
@@ -86,6 +126,18 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
     } finally {
       if (mounted) setState(() => _guardando = false);
     }
+  }
+
+  DateTime _fechaProximoAporte(DateTime desde, String frecuencia) {
+    if (frecuencia == 'semanal') return desde.add(const Duration(days: 7));
+    if (frecuencia == 'quincenal') return desde.add(const Duration(days: 14));
+    final primerDia = DateTime(desde.year, desde.month + 1, 1);
+    final ultimoDia = DateTime(primerDia.year, primerDia.month + 1, 0).day;
+    return DateTime(
+      primerDia.year,
+      primerDia.month,
+      desde.day.clamp(1, ultimoDia).toInt(),
+    );
   }
 
   @override
@@ -149,6 +201,35 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
                 ),
                 const SizedBox(height: 20),
 
+                Text('APORTE PROGRAMADO (opcional)', style: AppTypography.sectionLabel),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: _aporteCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(hintText: '0'),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) return null;
+                    final amount = double.tryParse(value.replaceAll(',', '.'));
+                    return amount == null || amount < 0
+                        ? 'Ingresa un aporte válido'
+                        : null;
+                  },
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  initialValue: _frecuenciaAporte,
+                  decoration: const InputDecoration(labelText: 'Frecuencia del aporte'),
+                  items: const [
+                    DropdownMenuItem(value: 'semanal', child: Text('Semanal')),
+                    DropdownMenuItem(value: 'quincenal', child: Text('Quincenal')),
+                    DropdownMenuItem(value: 'mensual', child: Text('Mensual')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setState(() => _frecuenciaAporte = value);
+                  },
+                ),
+                const SizedBox(height: 20),
+
                 Text('FECHA LÍMITE (opcional)', style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
                 InkWell(
@@ -163,7 +244,7 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.calendar_today, color: AppColors.gold, size: 18),
+                        Icon(Icons.calendar_today, color: AppColors.gold, size: 18),
                         const SizedBox(width: 8),
                         Text(
                           _fechaLimite == null
@@ -175,7 +256,7 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
                           const Spacer(),
                           GestureDetector(
                             onTap: () => setState(() => _fechaLimite = null),
-                            child: const Icon(Icons.close, size: 16, color: AppColors.textTertiary),
+                            child: Icon(Icons.close, size: 16, color: AppColors.textTertiary),
                           ),
                         ],
                       ],

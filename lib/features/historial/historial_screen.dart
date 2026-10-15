@@ -13,6 +13,7 @@ enum _Periodo { dias7, dias30, todo }
 
 class _HistorialScreenState extends State<HistorialScreen> {
   bool _cargando = true;
+  String? _errorCarga;
   List<HistorialItem> _items = [];
   FiltroHistorial _filtro = FiltroHistorial.todo;
   _Periodo _periodo = _Periodo.dias30;
@@ -33,9 +34,16 @@ class _HistorialScreenState extends State<HistorialScreen> {
     };
     try {
       final items = await HistorialService.cargar(desde: desde);
-      if (mounted) setState(() => _items = items);
-    } catch (_) {
-      // deja _items como estaba
+      if (mounted) {
+        setState(() {
+          _items = items;
+          _errorCarga = null;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _errorCarga = 'No se pudo cargar el historial: $error');
+      }
     } finally {
       if (mounted) setState(() => _cargando = false);
     }
@@ -88,7 +96,24 @@ class _HistorialScreenState extends State<HistorialScreen> {
           _barraFiltros(),
           Expanded(
             child: _cargando
-                ? const Center(child: CircularProgressIndicator(color: AppColors.gold))
+                ? Center(child: CircularProgressIndicator(color: AppColors.gold))
+                : _errorCarga != null
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(_errorCarga!, textAlign: TextAlign.center),
+                              const SizedBox(height: 12),
+                              OutlinedButton(
+                                onPressed: _cargar,
+                                child: const Text('Reintentar'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
                 : filtrados.isEmpty
                     ? _estadoVacio()
                     : RefreshIndicator(

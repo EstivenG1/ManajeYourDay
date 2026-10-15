@@ -52,7 +52,7 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          side: const BorderSide(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+          side: BorderSide(color: AppColors.borderSoft, width: AppRadii.borderWidth),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -68,7 +68,7 @@ class AppTheme {
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.textPrimary,
-          side: const BorderSide(color: AppColors.gold, width: AppRadii.borderWidth),
+          side: BorderSide(color: AppColors.gold, width: AppRadii.borderWidth),
           textStyle: AppTypography.itemTitle.copyWith(fontSize: 16),
           padding: const EdgeInsets.symmetric(vertical: 16),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.xl2)),
@@ -86,15 +86,15 @@ class AppTheme {
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          borderSide: const BorderSide(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+          borderSide: BorderSide(color: AppColors.borderSoft, width: AppRadii.borderWidth),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          borderSide: const BorderSide(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+          borderSide: BorderSide(color: AppColors.borderSoft, width: AppRadii.borderWidth),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          borderSide: const BorderSide(color: AppColors.gold, width: AppRadii.borderWidth),
+          borderSide: BorderSide(color: AppColors.gold, width: AppRadii.borderWidth),
         ),
         labelStyle: AppTypography.secondary,
         hintStyle: AppTypography.secondary.copyWith(color: AppColors.textTertiary),
@@ -102,7 +102,48 @@ class AppTheme {
       dividerColor: AppColors.borderSoft,
       // Temas propios de cada sección — para cambiar el diseño de un
       // módulo completo, se edita SOLO su archivo en core/theme/sections/.
-      extensions: const [
+      extensions: [
+        HomeTheme.estandar,
+        FinanzasTheme.estandar,
+        TareasTheme.estandar,
+        ReportesTheme.estandar,
+        AuthTheme.estandar,
+      ],
+    );
+  }
+
+  static ThemeData get dark {
+    final base = ThemeData.dark(useMaterial3: true);
+    return base.copyWith(
+      scaffoldBackgroundColor: AppColors.bgPrimary,
+      primaryColor: AppColors.gold,
+      colorScheme: base.colorScheme.copyWith(
+        primary: AppColors.gold,
+        secondary: AppColors.green,
+        surface: AppColors.surface,
+        error: AppColors.red,
+      ),
+      textTheme: base.textTheme.copyWith(
+        bodyLarge: AppTypography.bodyBase,
+        bodyMedium: AppTypography.secondary,
+        titleLarge: AppTypography.screenTitle,
+      ),
+      appBarTheme: AppBarTheme(
+        backgroundColor: AppColors.bgPrimary,
+        foregroundColor: AppColors.textPrimary,
+        elevation: 0,
+        titleTextStyle: AppTypography.screenTitle,
+      ),
+      cardTheme: CardThemeData(
+        color: AppColors.surface,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadii.xl2),
+          side: BorderSide(color: AppColors.borderSoft),
+        ),
+      ),
+      dividerColor: AppColors.borderSoft,
+      extensions: [
         HomeTheme.estandar,
         FinanzasTheme.estandar,
         TareasTheme.estandar,
