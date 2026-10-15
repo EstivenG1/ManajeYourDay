@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
@@ -76,7 +77,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   }
 
   Future<void> _elegirHora() async {
-    final seleccion = await showTimePicker(context: context, initialTime: _hora);
+    final seleccion = await showTimePicker(
+      context: context,
+      initialTime: _hora,
+    );
     if (seleccion != null) setState(() => _hora = seleccion);
   }
 
@@ -87,18 +91,28 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     if (!_formKey.currentState!.validate()) return;
     final titulo = (_tituloCtrl?.text ?? '').trim();
     if (titulo.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ponle un título a la tarea')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ponle un título a la tarea')),
+      );
       return;
     }
 
     setState(() => _guardando = true);
-    final fechaLimite = DateTime(_fecha.year, _fecha.month, _fecha.day, _hora.hour, _hora.minute);
+    final fechaLimite = DateTime(
+      _fecha.year,
+      _fecha.month,
+      _fecha.day,
+      _hora.hour,
+      _hora.minute,
+    );
 
     try {
       final userId = supabase.auth.currentUser!.id;
       final datos = {
         'titulo': titulo,
-        'descripcion': _descripcionCtrl.text.trim().isEmpty ? null : _descripcionCtrl.text.trim(),
+        'descripcion': _descripcionCtrl.text.trim().isEmpty
+            ? null
+            : _descripcionCtrl.text.trim(),
         'fecha_limite': fechaLimite.toIso8601String(),
         'prioridad': _prioridad,
       };
@@ -117,7 +131,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       }
 
       await SugerenciasService.registrarUso('tarea_titulo', titulo);
-      await SugerenciasService.registrarUso('tarea_hora', _formatearHora(_hora));
+      await SugerenciasService.registrarUso(
+        'tarea_hora',
+        _formatearHora(_hora),
+      );
 
       // Reprograma el recordatorio (si se edita, primero se cancela el
       // anterior para no dejar uno viejo con la fecha equivocada).
@@ -131,7 +148,8 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
       }
     } finally {
       if (mounted) setState(() => _guardando = false);
@@ -158,12 +176,17 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 _campoTituloConAutocompletado(),
                 const SizedBox(height: 20),
 
-                Text('DESCRIPCIÓN (opcional)', style: AppTypography.sectionLabel),
+                Text(
+                  'DESCRIPCIÓN (opcional)',
+                  style: AppTypography.sectionLabel,
+                ),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descripcionCtrl,
                   maxLines: 2,
-                  decoration: const InputDecoration(hintText: 'Detalles de la tarea...'),
+                  decoration: const InputDecoration(
+                    hintText: 'Detalles de la tarea...',
+                  ),
                 ),
                 const SizedBox(height: 20),
 
@@ -174,7 +197,8 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                     Expanded(
                       child: _botonSelector(
                         icono: Icons.calendar_today,
-                        texto: '${_fecha.day.toString().padLeft(2, '0')}/${_fecha.month.toString().padLeft(2, '0')}/${_fecha.year}',
+                        texto:
+                            '${_fecha.day.toString().padLeft(2, '0')}/${_fecha.month.toString().padLeft(2, '0')}/${_fecha.year}',
                         onTap: _elegirFecha,
                       ),
                     ),
@@ -191,7 +215,12 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
                 if (_sugerenciasHora.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  Text('Horas que usas seguido:', style: AppTypography.secondary.copyWith(color: AppColors.textTertiary)),
+                  Text(
+                    'Horas que usas seguido:',
+                    style: AppTypography.secondary.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
                   const SizedBox(height: 6),
                   Wrap(
                     spacing: 8,
@@ -200,20 +229,36 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                       final partes = h.split(':');
                       final activa = _formatearHora(_hora) == h;
                       return GestureDetector(
-                        onTap: () => setState(() => _hora = TimeOfDay(hour: int.parse(partes[0]), minute: int.parse(partes[1]))),
+                        onTap: () => setState(
+                          () => _hora = TimeOfDay(
+                            hour: int.parse(partes[0]),
+                            minute: int.parse(partes[1]),
+                          ),
+                        ),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: activa ? AppColors.gold : AppColors.surface,
                             borderRadius: BorderRadius.circular(AppRadii.full),
-                            border: Border.all(color: activa ? AppColors.gold : AppColors.borderSoft),
+                            border: Border.all(
+                              color: activa
+                                  ? AppColors.gold
+                                  : AppColors.borderSoft,
+                            ),
                           ),
-                          child: Text(h,
-                              style: TextStyle(
-                                color: activa ? Colors.white : AppColors.textPrimary,
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                              )),
+                          child: Text(
+                            h,
+                            style: TextStyle(
+                              color: activa
+                                  ? Colors.white
+                                  : AppColors.textPrimary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
                       );
                     }).toList(),
@@ -241,9 +286,22 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                         onTap: _guardando ? null : _guardar,
                         child: Center(
                           child: _guardando
-                              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white))
-                              : Text(_editando ? 'Guardar cambios' : 'Crear tarea',
-                                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Text(
+                                  _editando ? 'Guardar cambios' : 'Crear tarea',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 16,
+                                  ),
+                                ),
                         ),
                       ),
                     ),
@@ -262,7 +320,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       initialValue: TextEditingValue(text: widget.tarea?['titulo'] ?? ''),
       optionsBuilder: (value) {
         if (value.text.trim().isEmpty) return _sugerenciasTitulo.take(5);
-        return _sugerenciasTitulo.where((s) => s.toLowerCase().contains(value.text.toLowerCase()));
+        return _sugerenciasTitulo.where(
+          (s) => s.toLowerCase().contains(value.text.toLowerCase()),
+        );
       },
       fieldViewBuilder: (context, controller, focusNode, onSubmit) {
         _tituloCtrl = controller;
@@ -273,7 +333,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             hintText: 'Ej: Revisar informe financiero',
             prefixIcon: Icon(Icons.edit_note, color: AppColors.gold),
           ),
-          validator: (v) => (v == null || v.trim().isEmpty) ? 'Ponle un título a la tarea' : null,
+          validator: (v) => (v == null || v.trim().isEmpty)
+              ? 'Ponle un título a la tarea'
+              : null,
         );
       },
       optionsViewBuilder: (context, onSelected, options) {
@@ -297,7 +359,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                   final opcion = options.elementAt(i);
                   return ListTile(
                     dense: true,
-                    leading: const Icon(Icons.history, color: AppColors.gold, size: 18),
+                    leading: const Icon(
+                      Icons.history,
+                      color: AppColors.gold,
+                      size: 18,
+                    ),
                     title: Text(opcion, style: AppTypography.itemTitle),
                     onTap: () => onSelected(opcion),
                   );
@@ -310,22 +376,36 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     );
   }
 
-  Widget _botonSelector({required IconData icono, required String texto, required VoidCallback onTap}) {
+  Widget _botonSelector({
+    required IconData icono,
+    required String texto,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       borderRadius: BorderRadius.circular(AppRadii.xl2),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+          border: Border.all(
+            color: AppColors.borderSoft,
+            width: AppRadii.borderWidth,
+          ),
         ),
         child: Row(
           children: [
             Icon(icono, color: AppColors.gold, size: 18),
-            const SizedBox(width: 8),
-            Text(texto, style: AppTypography.itemTitle),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                texto,
+                style: AppTypography.itemTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
       ),
@@ -350,20 +430,35 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(vertical: 12),
               decoration: BoxDecoration(
-                color: activa ? color.withValues(alpha: 0.12) : AppColors.surface,
+                color: activa
+                    ? color.withValues(alpha: 0.12)
+                    : AppColors.surface,
                 borderRadius: BorderRadius.circular(AppRadii.xl2),
-                border: Border.all(color: activa ? color : AppColors.borderSoft),
+                border: Border.all(
+                  color: activa ? color : AppColors.borderSoft,
+                ),
               ),
               child: Column(
                 children: [
-                  Container(width: 10, height: 10, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
                   const SizedBox(height: 6),
-                  Text(etiqueta,
-                      style: TextStyle(
-                        color: activa ? AppColors.textPrimary : AppColors.textTertiary,
-                        fontWeight: activa ? FontWeight.w700 : FontWeight.w500,
-                        fontSize: 13,
-                      )),
+                  Text(
+                    etiqueta,
+                    style: TextStyle(
+                      color: activa
+                          ? AppColors.textPrimary
+                          : AppColors.textTertiary,
+                      fontWeight: activa ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
                 ],
               ),
             ),
