@@ -50,6 +50,7 @@ dependencies:
   pdf: ^3.13.1
   printing: ^5.15.1
   share_plus: ^13.3.1
+  excel_plus: ^2.27.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -68,6 +69,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+
+  assets:
+    - assets/icon/icon.png
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
@@ -112,6 +116,5 @@ flutter_launcher_icons:
   min_sdk_android: 21
   adaptive_icon_background: "#FFFFFF"
   adaptive_icon_foreground: "assets/icon/icon_foreground.png"
-
 
 

@@ -34,7 +34,8 @@ mejor sus hábitos de gasto y productividad.
 - Consultar reportes de hoy y semana; el reporte mensual depende del plan
   asignado en Supabase.
 - Consultar gráficos, presupuestos, metas y conclusiones calculadas localmente.
-- Exportar movimientos y tareas de un rango de fechas a CSV o PDF para compartir.
+- Exportar movimientos y tareas de un rango de fechas a CSV, Excel (.xlsx) o PDF.
+  Excel y PDF incluyen el logo y una presentación con la paleta dorada de MYD.
 
 ### Cuenta y accesibilidad
 
@@ -97,7 +98,7 @@ movimientos financieros automáticamente.
 - Integración bancaria, pagos automáticos o ahorros compartidos.
 - Conversión automática entre monedas.
 - Pasarela para comprar o cambiar planes Premium.
-- Copias de seguridad descargables automáticas; la exportación CSV/PDF es
+- Copias de seguridad descargables automáticas; la exportación CSV/Excel/PDF es
   iniciada por el usuario.
 
 ## Contexto académico y equipo

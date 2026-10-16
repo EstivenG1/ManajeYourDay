@@ -15,7 +15,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
   bool _cargando = true;
   String? _error;
   List<Map<String, dynamic>> _presupuestos = [];
-  Map<int, double> _gastos = {};
+  Map<String, double> _gastos = {};
 
   @override
   void initState() {
@@ -36,7 +36,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
           .eq('usuario_id', userId)
           .order('fecha_inicio', ascending: false);
       final presupuestos = List<Map<String, dynamic>>.from(rows);
-      final gastos = <int, double>{};
+      final gastos = <String, double>{};
       for (final presupuesto in presupuestos) {
         var total = 0.0;
         const tamanoPagina = 500;
@@ -58,7 +58,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
           );
           if (movimientos.length < tamanoPagina) break;
         }
-        gastos[presupuesto['id'] as int] = total;
+        gastos[presupuesto['id'].toString()] = total;
       }
       if (!mounted) return;
       setState(() {
@@ -179,7 +179,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
 
   Widget _tarjeta(Map<String, dynamic> presupuesto) {
     final limite = (presupuesto['monto_limite'] as num).toDouble();
-    final gastado = _gastos[presupuesto['id']] ?? 0;
+    final gastado = _gastos[presupuesto['id'].toString()] ?? 0;
     final progreso = limite <= 0 ? 0.0 : (gastado / limite).clamp(0.0, 1.0);
     final excedido = gastado > limite;
     final color = excedido ? AppColors.red : AppColors.green;
