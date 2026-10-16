@@ -1,6 +1,7 @@
 alter table public.tareas
   add column if not exists recurrencia text not null default 'ninguna',
-  add column if not exists recurrencia_padre_id text;
+  add column if not exists recurrencia_padre_id uuid
+    references public.tareas(id) on delete set null;
 
 alter table public.tareas
   drop constraint if exists tareas_recurrencia_check;
@@ -30,7 +31,7 @@ create table if not exists public.movimientos_recurrentes (
   usuario_id uuid not null references auth.users(id) on delete cascade,
   tipo text not null check (tipo in ('ingreso', 'gasto')),
   monto numeric not null check (monto > 0),
-  categoria_id bigint not null,
+  categoria_id integer not null references public.categorias(id),
   descripcion text,
   frecuencia text not null check (frecuencia in ('semanal', 'quincenal', 'mensual')),
   proxima_fecha date not null,
