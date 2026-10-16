@@ -574,7 +574,6 @@ class _ExportarDatosScreenState extends State<ExportarDatosScreen> {
           ),
           pw.SizedBox(height: 16),
           pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
               _tarjetaResumen('Ingresos', formatearMonto(ingresos)),
               _tarjetaResumen('Gastos', formatearMonto(gastos)),
