@@ -26,14 +26,23 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
     _session = supabase.auth.currentSession;
+    _passwordRecoveryPending =
+        _session != null &&
+        SupabaseConfig.consumePasswordRecoveryRedirect();
     _authSubscription = supabase.auth.onAuthStateChange.listen((authState) {
       if (!mounted) return;
       setState(() {
         _session = authState.session;
         if (authState.event == AuthChangeEvent.passwordRecovery) {
           _passwordRecoveryPending = true;
-        } else if (authState.event == AuthChangeEvent.signedOut) {
+          SupabaseConfig.consumePasswordRecoveryRedirect();
+        } else if (authState.event == AuthChangeEvent.signedOut ||
+            authState.event == AuthChangeEvent.signedIn) {
           _passwordRecoveryPending = false;
+          SupabaseConfig.consumePasswordRecoveryRedirect();
+        } else if (_session != null &&
+            SupabaseConfig.consumePasswordRecoveryRedirect()) {
+          _passwordRecoveryPending = true;
         }
       });
     });
