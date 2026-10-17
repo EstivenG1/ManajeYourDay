@@ -10,6 +10,9 @@ class SupabaseConfig {
   static const String supabasePublishableKey =
       'sb_publishable_qCKguGUejGoZfwpDYOvo9w_y03nJYb0';
 
+  static const String passwordRecoveryRedirect =
+      'io.supabase.myd://reset-password';
+
   static Future<void> init() async {
     await Supabase.initialize(
       url: supabaseUrl,

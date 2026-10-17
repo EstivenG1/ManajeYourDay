@@ -58,7 +58,10 @@ class _AuthScreenState extends State<AuthScreen> {
       return;
     }
     try {
-      await supabase.auth.resetPasswordForEmail(correo);
+      await supabase.auth.resetPasswordForEmail(
+        correo,
+        redirectTo: SupabaseConfig.passwordRecoveryRedirect,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
