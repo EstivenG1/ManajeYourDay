@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
+import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/auth/auth_errors.dart';
 import '../../core/services/google_auth_service.dart';
+import '../legal/legal_info_screen.dart';
 
 enum AuthTab { login, register }
 
@@ -123,6 +125,20 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _iniciarConGoogle() async {
     if (_cargando) return;
+    if (_tab == AuthTab.register && !_aceptaTerminos) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            appText(
+              context,
+              'Acepta los términos y la política de privacidad para continuar.',
+              'Accept the terms and privacy policy to continue.',
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     setState(() => _cargando = true);
 
     try {
@@ -244,17 +260,45 @@ class _AuthScreenState extends State<AuthScreen> {
                           controlAffinity: ListTileControlAffinity.leading,
                           dense: true,
                           activeColor: AppColors.goldDark,
-                          title: RichText(
-                            text: TextSpan(
-                              style: AppTypography.secondary.copyWith(
-                                color: AppColors.textSecondary,
-                              ),
-                              children: const [
-                                TextSpan(
-                                  text: 'Acepto los términos de uso y la política de privacidad.',
-                                ),
-                              ],
+                          title: Text(
+                            appText(
+                              context,
+                              'Acepto los términos y condiciones y la política de privacidad.',
+                              'I accept the terms and conditions and privacy policy.',
                             ),
+                            style: AppTypography.secondary.copyWith(
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 48),
+                          child: Wrap(
+                            spacing: 4,
+                            children: [
+                              TextButton(
+                                onPressed: () =>
+                                    _abrirLegal(LegalDocument.terms),
+                                child: Text(
+                                  appText(
+                                    context,
+                                    'Leer términos y condiciones',
+                                    'Read terms and conditions',
+                                  ),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    _abrirLegal(LegalDocument.privacy),
+                                child: Text(
+                                  appText(
+                                    context,
+                                    'Leer política de privacidad',
+                                    'Read privacy policy',
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -281,6 +325,14 @@ class _AuthScreenState extends State<AuthScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _abrirLegal(LegalDocument document) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => LegalInfoScreen(initialDocument: document),
       ),
     );
   }

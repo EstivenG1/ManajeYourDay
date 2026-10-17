@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
@@ -35,7 +36,8 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     super.initState();
     _tipo = widget.movimiento?['tipo'] ?? widget.tipoInicial;
     if (widget.movimiento != null) {
-      _montoCtrl.text = (widget.movimiento!['monto'] as num).toString();
+      _montoCtrl.text =
+          formatearMontoParaCampo(widget.movimiento!['monto'] as num);
       _fecha = DateTime.parse(widget.movimiento!['fecha']);
       _categoriaId = widget.movimiento!['categoria_id'];
     }
@@ -102,7 +104,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
     setState(() => _cargando = true);
     final descripcion = _descripcionCtrl?.text.trim() ?? '';
-    final monto = double.tryParse(_montoCtrl.text.replaceAll(',', '.')) ?? 0;
+    final monto = parseMontoEntrada(_montoCtrl.text) ?? 0;
 
     try {
       final userId = supabase.auth.currentUser!.id;
@@ -197,13 +199,12 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
                 Text('MONTO', style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
-                TextFormField(
+                MoneyTextFormField(
                   controller: _montoCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   style: AppTypography.balanceDisplay.copyWith(fontSize: 28, color: colorActivo),
                   decoration: const InputDecoration(hintText: '0'),
                   validator: (v) {
-                    final n = double.tryParse((v ?? '').replaceAll(',', '.'));
+                    final n = parseMontoEntrada(v ?? '');
                     if (n == null || n <= 0) return 'Ingresa un monto válido';
                     return null;
                   },

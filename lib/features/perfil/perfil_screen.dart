@@ -7,9 +7,12 @@ import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/services/notification_service.dart';
+import '../legal/centro_ayuda_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
-  const PerfilScreen({super.key});
+  final Future<void> Function()? onReplayTour;
+
+  const PerfilScreen({super.key, this.onReplayTour});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
@@ -469,6 +472,35 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     ),
                   ),
                 ],
+              ),
+
+              const SizedBox(height: 24),
+
+              _seccionTitulo(appText(context, 'AYUDA Y LEGAL', 'HELP AND LEGAL')),
+              Card(
+                child: ListTile(
+                  leading: Icon(Icons.help_outline_rounded, color: AppColors.gold),
+                  title: Text(
+                    appText(context, 'Centro de ayuda', 'Help center'),
+                    style: AppTypography.itemTitle,
+                  ),
+                  subtitle: Text(
+                    appText(
+                      context,
+                      'Guías de funciones, recorrido y documentos legales',
+                      'Feature guides, app tour, and legal documents',
+                    ),
+                    style: AppTypography.secondary,
+                  ),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => CentroAyudaScreen(
+                        onReplayTour: widget.onReplayTour,
+                      ),
+                    ),
+                  ),
+                ),
               ),
 
               const SizedBox(height: 24),

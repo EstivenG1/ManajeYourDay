@@ -1,5 +1,6 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
@@ -55,7 +56,9 @@ class _ReportesScreenState extends State<ReportesScreen> {
       }
     } catch (error) {
       if (mounted) {
-        setState(() => _errorCarga = 'No se pudo actualizar el reporte: $error');
+        setState(
+          () => _errorCarga = 'No se pudo actualizar el reporte: $error',
+        );
       }
     } finally {
       if (mounted) setState(() => _cargando = false);
@@ -65,7 +68,9 @@ class _ReportesScreenState extends State<ReportesScreen> {
   void _cambiarPeriodo(PeriodoReporte p) {
     if (p == PeriodoReporte.mes && !_esPremium) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('El reporte mensual es una función Premium ✨')),
+        const SnackBar(
+          content: Text('El reporte mensual es una función Premium ✨'),
+        ),
       );
       return;
     }
@@ -85,14 +90,16 @@ class _ReportesScreenState extends State<ReportesScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           _selectorPeriodo(),
+          if (datos != null) ...[
+            const SizedBox(height: 16),
+            _tarjetaComparativa(datos),
+          ],
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (_) => const ExportarDatosScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const ExportarDatosScreen()),
               ),
               icon: const Icon(Icons.ios_share),
               label: Text(appText(context, 'Exportar', 'Export')),
@@ -147,6 +154,88 @@ class _ReportesScreenState extends State<ReportesScreen> {
     );
   }
 
+  Widget _tarjetaComparativa(ReporteData d) {
+    final variacionIngresos = d.variacionIngresos;
+    final variacionGastos = d.variacionGastos;
+    final tieneIngreso = variacionIngresos != null;
+    final tieneGasto = variacionGastos != null;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('COMPARATIVO', style: AppTypography.sectionLabel),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: _chipComparativo(
+                  titulo: 'Ingresos',
+                  valor: tieneIngreso
+                      ? '${variacionIngresos.toStringAsFixed(0)}%'
+                      : 'Sin dato',
+                  color: variacionIngresos != null && variacionIngresos >= 0
+                      ? AppColors.green
+                      : AppColors.textTertiary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _chipComparativo(
+                  titulo: 'Gastos',
+                  valor: tieneGasto
+                      ? '${variacionGastos.toStringAsFixed(0)}%'
+                      : 'Sin dato',
+                  color: variacionGastos != null && variacionGastos <= 0
+                      ? AppColors.green
+                      : AppColors.red,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chipComparativo({
+    required String titulo,
+    required String valor,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.goldSoftBg,
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(titulo, style: AppTypography.secondary.copyWith(fontSize: 10.5)),
+          const SizedBox(height: 6),
+          Text(
+            valor,
+            style: AppTypography.itemTitle.copyWith(color: color, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ---------- Selector de periodo ----------
   Widget _selectorPeriodo() {
     Widget boton(String texto, PeriodoReporte valor, {bool premium = false}) {
@@ -160,18 +249,28 @@ class _ReportesScreenState extends State<ReportesScreen> {
             decoration: BoxDecoration(
               color: activo ? AppColors.gold : AppColors.surface,
               borderRadius: BorderRadius.circular(AppRadii.xl2),
-              border: Border.all(color: activo ? AppColors.gold : AppColors.borderSoft),
+              border: Border.all(
+                color: activo ? AppColors.gold : AppColors.borderSoft,
+              ),
             ),
             child: Column(
               children: [
-                Text(texto,
-                    style: TextStyle(
-                      color: activo ? Colors.white : AppColors.textPrimary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    )),
+                Text(
+                  texto,
+                  style: TextStyle(
+                    color: activo ? Colors.white : AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
                 if (premium && !_esPremium)
-                  Text('🔒 Premium', style: TextStyle(fontSize: 9, color: AppColors.textTertiary)),
+                  Text(
+                    '🔒 Premium',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: AppColors.textTertiary,
+                    ),
+                  ),
               ],
             ),
           ),
@@ -183,8 +282,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
       children: [
         boton(appText(context, 'Hoy', 'Today'), PeriodoReporte.hoy),
         boton(appText(context, 'Semana', 'Week'), PeriodoReporte.semana),
-        boton(appText(context, 'Mes', 'Month'), PeriodoReporte.mes,
-            premium: true),
+        boton(
+          appText(context, 'Mes', 'Month'),
+          PeriodoReporte.mes,
+          premium: true,
+        ),
       ],
     );
   }
@@ -194,16 +296,37 @@ class _ReportesScreenState extends State<ReportesScreen> {
     return [
       Row(
         children: [
-          Expanded(child: _kpi('Ingresos hoy', formatearMonto(d.ingresos), AppColors.green, tema.kpiIngresoBg, tema.kpiIngresoBorder)),
+          Expanded(
+            child: _kpi(
+              'Ingresos hoy',
+              formatearMonto(d.ingresos),
+              AppColors.green,
+              tema.kpiIngresoBg,
+              tema.kpiIngresoBorder,
+            ),
+          ),
           const SizedBox(width: 10),
-          Expanded(child: _kpi('Gastos hoy', formatearMonto(d.gastos), AppColors.red, tema.kpiGastoBg, tema.kpiGastoBorder)),
+          Expanded(
+            child: _kpi(
+              'Gastos hoy',
+              formatearMonto(d.gastos),
+              AppColors.red,
+              tema.kpiGastoBg,
+              tema.kpiGastoBorder,
+            ),
+          ),
         ],
       ),
       const SizedBox(height: 20),
       Text('MOVIMIENTOS DE HOY', style: AppTypography.sectionLabel),
       const SizedBox(height: 10),
       if (d.movimientosDeHoy.isEmpty)
-        _tarjeta(child: Text('Aún no registras movimientos hoy.', style: AppTypography.secondary))
+        _tarjeta(
+          child: Text(
+            'Aún no registras movimientos hoy.',
+            style: AppTypography.secondary,
+          ),
+        )
       else
         _tarjeta(
           child: Column(
@@ -213,12 +336,25 @@ class _ReportesScreenState extends State<ReportesScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
-                    Icon(esIngreso ? Icons.arrow_downward : Icons.arrow_upward,
-                        size: 15, color: esIngreso ? AppColors.green : AppColors.red),
+                    Icon(
+                      esIngreso ? Icons.arrow_downward : Icons.arrow_upward,
+                      size: 15,
+                      color: esIngreso ? AppColors.green : AppColors.red,
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(m['categorias']?['nombre'] ?? 'Movimiento', style: AppTypography.itemTitle)),
-                    Text('${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
-                        style: TextStyle(color: esIngreso ? AppColors.green : AppColors.red, fontWeight: FontWeight.w700)),
+                    Expanded(
+                      child: Text(
+                        m['categorias']?['nombre'] ?? 'Movimiento',
+                        style: AppTypography.itemTitle,
+                      ),
+                    ),
+                    Text(
+                      '${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
+                      style: TextStyle(
+                        color: esIngreso ? AppColors.green : AppColors.red,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               );
@@ -229,7 +365,12 @@ class _ReportesScreenState extends State<ReportesScreen> {
       Text('TAREAS DE HOY', style: AppTypography.sectionLabel),
       const SizedBox(height: 10),
       if (d.tareasDeHoy.isEmpty)
-        _tarjeta(child: Text('No tienes tareas programadas para hoy.', style: AppTypography.secondary))
+        _tarjeta(
+          child: Text(
+            'No tienes tareas programadas para hoy.',
+            style: AppTypography.secondary,
+          ),
+        )
       else
         _tarjeta(
           child: Column(
@@ -239,10 +380,19 @@ class _ReportesScreenState extends State<ReportesScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
                   children: [
-                    Icon(completada ? Icons.check_circle : Icons.radio_button_unchecked,
-                        size: 16, color: completada ? AppColors.green : AppColors.textTertiary),
+                    Icon(
+                      completada
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 16,
+                      color: completada
+                          ? AppColors.green
+                          : AppColors.textTertiary,
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(t['titulo'], style: AppTypography.itemTitle)),
+                    Expanded(
+                      child: Text(t['titulo'], style: AppTypography.itemTitle),
+                    ),
                   ],
                 ),
               );
@@ -278,7 +428,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
         const SizedBox(height: 24),
       ],
 
-      Text('CUMPLIMIENTO DE TAREAS POR PRIORIDAD', style: AppTypography.sectionLabel),
+      Text(
+        'CUMPLIMIENTO DE TAREAS POR PRIORIDAD',
+        style: AppTypography.sectionLabel,
+      ),
       const SizedBox(height: 12),
       _tarjeta(child: _barrasCumplimiento(d, tema)),
       const SizedBox(height: 24),
@@ -293,27 +446,43 @@ class _ReportesScreenState extends State<ReportesScreen> {
       if (d.presupuestos.isNotEmpty) ...[
         Text('PRESUPUESTOS', style: AppTypography.sectionLabel),
         const SizedBox(height: 12),
-        _tarjeta(child: Column(children: d.presupuestos.map((p) => _barraProgreso(
-              nombre: p['nombre'],
-              actual: p['gastado'],
-              total: p['limite'],
-              colorNormal: AppColors.green,
-              colorAlerta: AppColors.red,
-            )).toList())),
+        _tarjeta(
+          child: Column(
+            children: d.presupuestos
+                .map(
+                  (p) => _barraProgreso(
+                    nombre: p['nombre'],
+                    actual: p['gastado'],
+                    total: p['limite'],
+                    colorNormal: AppColors.green,
+                    colorAlerta: AppColors.red,
+                  ),
+                )
+                .toList(),
+          ),
+        ),
         const SizedBox(height: 24),
       ],
 
       if (d.metas.isNotEmpty) ...[
         Text('METAS DE AHORRO', style: AppTypography.sectionLabel),
         const SizedBox(height: 12),
-        _tarjeta(child: Column(children: d.metas.map((m) => _barraProgreso(
-              nombre: m['nombre'],
-              actual: m['actual'],
-              total: m['objetivo'],
-              colorNormal: AppColors.gold,
-              colorAlerta: AppColors.gold,
-              invertirAlerta: true,
-            )).toList())),
+        _tarjeta(
+          child: Column(
+            children: d.metas
+                .map(
+                  (m) => _barraProgreso(
+                    nombre: m['nombre'],
+                    actual: m['actual'],
+                    total: m['objetivo'],
+                    colorNormal: AppColors.gold,
+                    colorAlerta: AppColors.gold,
+                    invertirAlerta: true,
+                  ),
+                )
+                .toList(),
+          ),
+        ),
         const SizedBox(height: 24),
       ],
 
@@ -325,10 +494,15 @@ class _ReportesScreenState extends State<ReportesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: d.conclusiones
-              .map((c) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(c, style: AppTypography.bodyBase.copyWith(fontSize: 13.5)),
-                  ))
+              .map(
+                (c) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    c,
+                    style: AppTypography.bodyBase.copyWith(fontSize: 13.5),
+                  ),
+                ),
+              )
               .toList(),
         ),
       ),
@@ -343,7 +517,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
       decoration: BoxDecoration(
         color: color ?? AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.xl2),
-        border: Border.all(color: borde ?? AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: borde ?? AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: child,
     );
@@ -352,9 +529,25 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _filaKpisPrincipales(ReporteData d, ReportesTheme tema) {
     return Row(
       children: [
-        Expanded(child: _kpi('Productividad', '${d.productividad.toStringAsFixed(0)}%', AppColors.goldDeep, AppColors.goldChipBg, AppColors.goldBorder)),
+        Expanded(
+          child: _kpi(
+            'Productividad',
+            '${d.productividad.toStringAsFixed(0)}%',
+            AppColors.goldDeep,
+            AppColors.goldChipBg,
+            AppColors.goldBorder,
+          ),
+        ),
         const SizedBox(width: 10),
-        Expanded(child: _kpi('Balance neto', formatearMonto(d.ingresos - d.gastos), AppColors.green, tema.kpiIngresoBg, tema.kpiIngresoBorder)),
+        Expanded(
+          child: _kpi(
+            'Balance neto',
+            formatearMonto(d.ingresos - d.gastos),
+            AppColors.green,
+            tema.kpiIngresoBg,
+            tema.kpiIngresoBorder,
+          ),
+        ),
       ],
     );
   }
@@ -362,7 +555,12 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _filaKpisSecundarios(ReporteData d) {
     return Row(
       children: [
-        Expanded(child: _kpiChico('Gasto prom./día', formatearMonto(d.gastoPromedioDiario))),
+        Expanded(
+          child: _kpiChico(
+            'Gasto prom./día',
+            formatearMonto(d.gastoPromedioDiario),
+          ),
+        ),
         const SizedBox(width: 8),
         Expanded(child: _kpiChico('Top gasto', d.categoriaTop ?? '—')),
         const SizedBox(width: 8),
@@ -384,7 +582,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
         children: [
           Text(label, style: AppTypography.secondary.copyWith(color: color)),
           const SizedBox(height: 4),
-          Text(valor, style: AppTypography.kpiNumber.copyWith(fontSize: 20, color: color)),
+          Text(
+            valor,
+            style: AppTypography.kpiNumber.copyWith(fontSize: 20, color: color),
+          ),
         ],
       ),
     );
@@ -403,9 +604,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
         children: [
           Text(label, style: AppTypography.secondary.copyWith(fontSize: 10.5)),
           const SizedBox(height: 2),
-          Text(valor,
-              style: AppTypography.itemTitle.copyWith(fontSize: 12.5),
-              overflow: TextOverflow.ellipsis),
+          Text(
+            valor,
+            style: AppTypography.itemTitle.copyWith(fontSize: 12.5),
+            overflow: TextOverflow.ellipsis,
+          ),
         ],
       ),
     );
@@ -413,9 +616,15 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _graficaBarras(ReporteData d) {
     if (d.etiquetasSerie.isEmpty) {
-      return Text('Sin datos suficientes para graficar.', style: AppTypography.secondary);
+      return Text(
+        'Sin datos suficientes para graficar.',
+        style: AppTypography.secondary,
+      );
     }
-    final maxY = [...d.ingresosPorSerie, ...d.gastosPorSerie].fold(0.0, (a, b) => a > b ? a : b);
+    final maxY = [
+      ...d.ingresosPorSerie,
+      ...d.gastosPorSerie,
+    ].fold(0.0, (a, b) => a > b ? a : b);
 
     return SizedBox(
       height: 180,
@@ -425,25 +634,50 @@ class _ReportesScreenState extends State<ReportesScreen> {
           gridData: const FlGridData(show: false),
           borderData: FlBorderData(show: false),
           titlesData: FlTitlesData(
-            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            leftTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            rightTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
+            topTitles: const AxisTitles(
+              sideTitles: SideTitles(showTitles: false),
+            ),
             bottomTitles: AxisTitles(
               sideTitles: SideTitles(
                 showTitles: true,
                 getTitlesWidget: (value, meta) => Padding(
                   padding: const EdgeInsets.only(top: 6),
-                  child: Text(d.etiquetasSerie[value.toInt()],
-                      style: AppTypography.secondary.copyWith(color: AppColors.textTertiary, fontSize: 10)),
+                  child: Text(
+                    d.etiquetasSerie[value.toInt()],
+                    style: AppTypography.secondary.copyWith(
+                      color: AppColors.textTertiary,
+                      fontSize: 10,
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
           barGroups: List.generate(d.etiquetasSerie.length, (i) {
-            return BarChartGroupData(x: i, barRods: [
-              BarChartRodData(toY: d.ingresosPorSerie[i], color: AppColors.green, width: 8, borderRadius: BorderRadius.circular(3)),
-              BarChartRodData(toY: d.gastosPorSerie[i], color: AppColors.red, width: 8, borderRadius: BorderRadius.circular(3)),
-            ], barsSpace: 3);
+            return BarChartGroupData(
+              x: i,
+              barRods: [
+                BarChartRodData(
+                  toY: d.ingresosPorSerie[i],
+                  color: AppColors.green,
+                  width: 8,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                BarChartRodData(
+                  toY: d.gastosPorSerie[i],
+                  color: AppColors.red,
+                  width: 8,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ],
+              barsSpace: 3,
+            );
           }),
         ),
       ),
@@ -452,7 +686,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _graficaLinea(ReporteData d) {
     if (d.balanceAcumulado.isEmpty) {
-      return Text('Sin datos suficientes para graficar.', style: AppTypography.secondary);
+      return Text(
+        'Sin datos suficientes para graficar.',
+        style: AppTypography.secondary,
+      );
     }
     return SizedBox(
       height: 160,
@@ -463,12 +700,18 @@ class _ReportesScreenState extends State<ReportesScreen> {
           titlesData: const FlTitlesData(show: false),
           lineBarsData: [
             LineChartBarData(
-              spots: List.generate(d.balanceAcumulado.length, (i) => FlSpot(i.toDouble(), d.balanceAcumulado[i])),
+              spots: List.generate(
+                d.balanceAcumulado.length,
+                (i) => FlSpot(i.toDouble(), d.balanceAcumulado[i]),
+              ),
               isCurved: true,
               color: AppColors.gold,
               barWidth: 3,
               dotData: const FlDotData(show: false),
-              belowBarData: BarAreaData(show: true, color: AppColors.goldChipBg),
+              belowBarData: BarAreaData(
+                show: true,
+                color: AppColors.goldChipBg,
+              ),
             ),
           ],
         ),
@@ -478,27 +721,40 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   Widget _graficaDona(ReporteData d, ReportesTheme tema) {
     final total = d.gastosPorCategoria.fold(0.0, (a, e) => a + e.value);
-    final colores = [AppColors.gold, AppColors.green, AppColors.red, tema.barraCategoria, AppColors.textTertiary];
+    final colores = [
+      AppColors.gold,
+      AppColors.green,
+      AppColors.red,
+      tema.barraCategoria,
+      AppColors.textTertiary,
+    ];
 
     return Row(
       children: [
         SizedBox(
-          width: 110, height: 110,
-          child: PieChart(PieChartData(
-            sectionsSpace: 2,
-            centerSpaceRadius: 28,
-            sections: List.generate(d.gastosPorCategoria.length, (i) {
-              final e = d.gastosPorCategoria[i];
-              final pct = total == 0 ? 0 : (e.value / total) * 100;
-              return PieChartSectionData(
-                value: e.value,
-                color: colores[i % colores.length],
-                radius: 20,
-                title: '${pct.toStringAsFixed(0)}%',
-                titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
-              );
-            }),
-          )),
+          width: 110,
+          height: 110,
+          child: PieChart(
+            PieChartData(
+              sectionsSpace: 2,
+              centerSpaceRadius: 28,
+              sections: List.generate(d.gastosPorCategoria.length, (i) {
+                final e = d.gastosPorCategoria[i];
+                final pct = total == 0 ? 0 : (e.value / total) * 100;
+                return PieChartSectionData(
+                  value: e.value,
+                  color: colores[i % colores.length],
+                  radius: 20,
+                  title: '${pct.toStringAsFixed(0)}%',
+                  titleStyle: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                );
+              }),
+            ),
+          ),
         ),
         const SizedBox(width: 16),
         Expanded(
@@ -510,10 +766,26 @@ class _ReportesScreenState extends State<ReportesScreen> {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    Container(width: 8, height: 8, decoration: BoxDecoration(color: colores[i % colores.length], shape: BoxShape.circle)),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: colores[i % colores.length],
+                        shape: BoxShape.circle,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(e.key, style: AppTypography.itemTitle, overflow: TextOverflow.ellipsis)),
-                    Text(formatearMonto(e.value), style: AppTypography.secondary),
+                    Expanded(
+                      child: Text(
+                        e.key,
+                        style: AppTypography.itemTitle,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    Text(
+                      formatearMonto(e.value),
+                      style: AppTypography.secondary,
+                    ),
                   ],
                 ),
               );
@@ -525,7 +797,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
   }
 
   Widget _barrasCumplimiento(ReporteData d, ReportesTheme tema) {
-    final coloresPrioridad = {'alta': AppColors.red, 'media': AppColors.amber, 'baja': AppColors.textTertiary};
+    final coloresPrioridad = {
+      'alta': AppColors.red,
+      'media': AppColors.amber,
+      'baja': AppColors.textTertiary,
+    };
     return Column(
       children: ['alta', 'media', 'baja'].map((p) {
         final (completadas, totales) = d.cumplimientoPorPrioridad[p] ?? (0, 0);
@@ -538,8 +814,16 @@ class _ReportesScreenState extends State<ReportesScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(p.toUpperCase(), style: AppTypography.secondary.copyWith(color: coloresPrioridad[p])),
-                  Text('$completadas / $totales', style: AppTypography.secondary),
+                  Text(
+                    p.toUpperCase(),
+                    style: AppTypography.secondary.copyWith(
+                      color: coloresPrioridad[p],
+                    ),
+                  ),
+                  Text(
+                    '$completadas / $totales',
+                    style: AppTypography.secondary,
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -577,18 +861,21 @@ class _ReportesScreenState extends State<ReportesScreen> {
         final dia = i + 1;
         final nivel = d.mapaCalor[dia] ?? 0;
         return Container(
-          width: 26, height: 26,
+          width: 26,
+          height: 26,
           decoration: BoxDecoration(
             color: coloresNivel[nivel],
             borderRadius: BorderRadius.circular(6),
           ),
           alignment: Alignment.center,
-          child: Text('$dia',
-              style: TextStyle(
-                fontSize: 9,
-                color: nivel >= 3 ? Colors.white : AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              )),
+          child: Text(
+            '$dia',
+            style: TextStyle(
+              fontSize: 9,
+              color: nivel >= 3 ? Colors.white : AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         );
       }),
     );
@@ -647,8 +934,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
           if (excedido)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('⚠️ Superaste el límite de este presupuesto',
-                  style: TextStyle(color: colorAlerta, fontSize: 11)),
+              child: Text(
+                '⚠️ Superaste el límite de este presupuesto',
+                style: TextStyle(color: colorAlerta, fontSize: 11),
+              ),
             ),
         ],
       ),

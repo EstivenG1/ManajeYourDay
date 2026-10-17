@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
@@ -82,10 +83,9 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
             const SizedBox(height: 16),
             Text('MONTO', style: AppTypography.sectionLabel),
             const SizedBox(height: 8),
-            TextField(
+            MoneyTextFormField(
               controller: montoCtrl,
               autofocus: true,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               style: AppTypography.balanceDisplay.copyWith(fontSize: 26, color: AppColors.gold),
               decoration: const InputDecoration(hintText: '0'),
             ),
@@ -106,7 +106,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(AppRadii.xl2),
                     onTap: () {
-                      final monto = double.tryParse(montoCtrl.text.replaceAll(',', '.'));
+                      final monto = parseMontoEntrada(montoCtrl.text);
                       if (monto == null || monto <= 0) return;
                       Navigator.pop(context, true);
                     },
@@ -125,7 +125,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
 
     if (resultado == true) {
       final montoAnterior = (_meta['monto_actual'] as num).toDouble();
-      final monto = double.tryParse(montoCtrl.text.replaceAll(',', '.'));
+      final monto = parseMontoEntrada(montoCtrl.text);
       if (monto == null || monto <= 0) return;
       try {
         final userId = supabase.auth.currentUser!.id;

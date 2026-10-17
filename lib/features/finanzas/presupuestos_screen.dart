@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/services/home_utils.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
 
 class PresupuestosScreen extends StatefulWidget {
@@ -266,7 +267,8 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
         ? DateTime(now.year, now.month + 1, 0)
         : DateTime.parse(widget.presupuesto!['fecha_fin']);
     _categoria = widget.presupuesto?['categoria_id'] as int?;
-    _monto.text = widget.presupuesto?['monto_limite']?.toString() ?? '';
+    final montoInicial = widget.presupuesto?['monto_limite'];
+    if (montoInicial is num) _monto.text = formatearMontoParaCampo(montoInicial);
     _cargarCategorias();
   }
 
@@ -351,7 +353,7 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
       final datos = {
         'usuario_id': userId,
         'categoria_id': _categoria,
-        'monto_limite': double.parse(_monto.text.replaceAll(',', '.')),
+        'monto_limite': parseMontoEntrada(_monto.text)!,
         'fecha_inicio': _fechaIso(_inicio),
         'fecha_fin': _fechaIso(_fin),
       };
@@ -418,18 +420,13 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
                             value == null ? 'Selecciona una categoría' : null,
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
+                      MoneyTextFormField(
                         controller: _monto,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
                         decoration: const InputDecoration(
                           labelText: 'Límite de gasto',
                         ),
                         validator: (value) {
-                          final amount = double.tryParse(
-                            (value ?? '').replaceAll(',', '.'),
-                          );
+                          final amount = parseMontoEntrada(value ?? '');
                           return amount == null || amount <= 0
                               ? 'Ingresa un monto mayor que cero'
                               : null;

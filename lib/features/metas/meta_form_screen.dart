@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/notification_service.dart';
@@ -30,9 +31,15 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
     super.initState();
     if (widget.meta != null) {
       _nombreCtrl.text = widget.meta!['nombre'] ?? '';
-      _objetivoCtrl.text = (widget.meta!['monto_objetivo'] as num).toString();
+      _objetivoCtrl.text = formatearMontoParaCampo(
+        widget.meta!['monto_objetivo'] as num,
+      );
       _aporteCtrl.text =
-          (widget.meta!['aporte_programado'] as num?)?.toString() ?? '';
+          widget.meta!['aporte_programado'] is num
+              ? formatearMontoParaCampo(
+                  widget.meta!['aporte_programado'] as num,
+                )
+              : '';
       _frecuenciaAporte =
           widget.meta!['frecuencia_aporte'] as String? ?? 'mensual';
       _icono = widget.meta!['icono'] ?? '🎯';
@@ -68,12 +75,9 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
       final userId = supabase.auth.currentUser!.id;
       final datos = {
         'nombre': _nombreCtrl.text.trim(),
-        'monto_objetivo': double.parse(_objetivoCtrl.text.replaceAll(',', '.')),
+        'monto_objetivo': parseMontoEntrada(_objetivoCtrl.text)!,
         'icono': _icono,
-        'aporte_programado': double.tryParse(
-              _aporteCtrl.text.replaceAll(',', '.'),
-            ) ??
-            0,
+        'aporte_programado': parseMontoEntrada(_aporteCtrl.text) ?? 0,
         'frecuencia_aporte': _frecuenciaAporte,
         'proximo_aporte': _aporteCtrl.text.trim().isEmpty
             ? null
@@ -188,13 +192,12 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
 
                 Text('MONTO OBJETIVO', style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
-                TextFormField(
+                MoneyTextFormField(
                   controller: _objetivoCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   style: AppTypography.balanceDisplay.copyWith(fontSize: 26, color: AppColors.goldDeep),
                   decoration: const InputDecoration(hintText: '0'),
                   validator: (v) {
-                    final n = double.tryParse((v ?? '').replaceAll(',', '.'));
+                    final n = parseMontoEntrada(v ?? '');
                     if (n == null || n <= 0) return 'Ingresa un monto válido';
                     return null;
                   },
@@ -203,13 +206,12 @@ class _MetaFormScreenState extends State<MetaFormScreen> {
 
                 Text('APORTE PROGRAMADO (opcional)', style: AppTypography.sectionLabel),
                 const SizedBox(height: 8),
-                TextFormField(
+                MoneyTextFormField(
                   controller: _aporteCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(hintText: '0'),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) return null;
-                    final amount = double.tryParse(value.replaceAll(',', '.'));
+                    final amount = parseMontoEntrada(value);
                     return amount == null || amount < 0
                         ? 'Ingresa un aporte válido'
                         : null;

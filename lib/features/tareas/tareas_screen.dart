@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/services/home_utils.dart';
 import '../../core/services/notification_service.dart';
 import 'task_form_screen.dart';
 
@@ -23,6 +24,7 @@ class _TareasScreenState extends State<TareasScreen> {
   _Filtro _filtro = _Filtro.pendientes;
   String? _prioridadFiltro;
   DateTime? _fechaFiltro;
+  bool _priorizarPorUrgencia = true;
 
   @override
   void dispose() {
@@ -66,21 +68,24 @@ class _TareasScreenState extends State<TareasScreen> {
   }
 
   List<Map<String, dynamic>> get _tareasFiltradas {
-    return _tareas.where((tarea) {
+    final filtradas = _tareas.where((tarea) {
       final estadoCoincide = switch (_filtro) {
         _Filtro.pendientes => tarea['estado'] == 'pendiente',
         _Filtro.completadas => tarea['estado'] == 'completada',
         _Filtro.todas => true,
       };
-      final textoCoincide = _buscarCtrl.text.trim().isEmpty ||
-          (tarea['titulo'] as String)
-              .toLowerCase()
-              .contains(_buscarCtrl.text.trim().toLowerCase());
-      final prioridadCoincide = _prioridadFiltro == null ||
-          tarea['prioridad'] == _prioridadFiltro;
-      final fecha = DateTime.parse(tarea['fecha_limite']);
-      final fechaCoincide = _fechaFiltro == null ||
-          (fecha.year == _fechaFiltro!.year &&
+      final textoCoincide =
+          _buscarCtrl.text.trim().isEmpty ||
+          (tarea['titulo'] as String).toLowerCase().contains(
+            _buscarCtrl.text.trim().toLowerCase(),
+          );
+      final prioridadCoincide =
+          _prioridadFiltro == null || tarea['prioridad'] == _prioridadFiltro;
+      final fecha = DateTime.tryParse(tarea['fecha_limite']?.toString() ?? '');
+      final fechaCoincide =
+          _fechaFiltro == null ||
+          (fecha != null &&
+              fecha.year == _fechaFiltro!.year &&
               fecha.month == _fechaFiltro!.month &&
               fecha.day == _fechaFiltro!.day);
       return estadoCoincide &&
@@ -88,6 +93,10 @@ class _TareasScreenState extends State<TareasScreen> {
           prioridadCoincide &&
           fechaCoincide;
     }).toList();
+
+    return _priorizarPorUrgencia
+        ? ordenarTareasPorUrgencia(filtradas)
+        : filtradas;
   }
 
   Future<void> _alternarEstado(Map<String, dynamic> tarea) async {
@@ -152,7 +161,8 @@ class _TareasScreenState extends State<TareasScreen> {
   }
 
   Future<void> _crearSiguienteTareaRecurrente(
-      Map<String, dynamic> tarea) async {
+    Map<String, dynamic> tarea,
+  ) async {
     final recurrencia = tarea['recurrencia'] as String? ?? 'ninguna';
     if (recurrencia == 'ninguna') return;
 
@@ -213,8 +223,11 @@ class _TareasScreenState extends State<TareasScreen> {
 
   DateTime _sumarMes(DateTime fecha) {
     final primerDiaMesSiguiente = DateTime(fecha.year, fecha.month + 1, 1);
-    final ultimoDiaMesSiguiente =
-        DateTime(primerDiaMesSiguiente.year, primerDiaMesSiguiente.month + 1, 0);
+    final ultimoDiaMesSiguiente = DateTime(
+      primerDiaMesSiguiente.year,
+      primerDiaMesSiguiente.month + 1,
+      0,
+    );
     final dia = fecha.day < ultimoDiaMesSiguiente.day
         ? fecha.day
         : ultimoDiaMesSiguiente.day;
@@ -240,10 +253,7 @@ class _TareasScreenState extends State<TareasScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: Text(
-              'Eliminar',
-              style: TextStyle(color: AppColors.red),
-            ),
+            child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
           ),
         ],
       ),
@@ -274,32 +284,120 @@ class _TareasScreenState extends State<TareasScreen> {
     if (seleccion != null) setState(() => _fechaFiltro = seleccion);
   }
 
+  Future<void> _abrirModoEnfoque() async {
+    final tareas = ordenarTareasPorUrgencia(
+      _tareasFiltradas.isNotEmpty ? _tareasFiltradas : _tareas,
+    ).take(3).toList();
+
+    if (!mounted) return;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.filter_center_focus, color: AppColors.gold),
+                const SizedBox(width: 8),
+                Text('Modo enfoque', style: AppTypography.sectionLabel),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (tareas.isEmpty)
+              Text(
+                'No hay tareas activas para este bloque.',
+                style: AppTypography.secondary,
+              )
+            else ...[
+              ...tareas.map((tarea) {
+                final prioridad = (tarea['prioridad'] ?? 'media').toString();
+                final fecha =
+                    DateTime.tryParse(
+                      tarea['fecha_limite']?.toString() ?? '',
+                    ) ??
+                    DateTime.now();
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.goldSoftBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.goldBorder),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        color: prioridad == 'alta'
+                            ? AppColors.red
+                            : prioridad == 'media'
+                            ? AppColors.gold
+                            : AppColors.green,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              tarea['titulo'] ?? 'Tarea sin título',
+                              style: AppTypography.itemTitle,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '${prioridad.toUpperCase()} • ${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}',
+                              style: AppTypography.secondary.copyWith(
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       body: _cargando
-          ? Center(
-              child: CircularProgressIndicator(color: AppColors.gold),
-            )
+          ? Center(child: CircularProgressIndicator(color: AppColors.gold))
           : _errorCarga != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_errorCarga!, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        OutlinedButton.icon(
-                          onPressed: _cargarTareas,
-                          icon: const Icon(Icons.refresh),
-                          label: Text(appText(context, 'Reintentar', 'Retry')),
-                        ),
-                      ],
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_errorCarga!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: _cargarTareas,
+                      icon: const Icon(Icons.refresh),
+                      label: Text(appText(context, 'Reintentar', 'Retry')),
                     ),
-                  ),
-                )
+                  ],
+                ),
+              ),
+            )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargarTareas,
@@ -311,7 +409,11 @@ class _TareasScreenState extends State<TareasScreen> {
                       controller: _buscarCtrl,
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
-                        hintText: appText(context, 'Buscar tareas', 'Search tasks'),
+                        hintText: appText(
+                          context,
+                          'Buscar tareas',
+                          'Search tasks',
+                        ),
                         prefixIcon: const Icon(Icons.search),
                         suffixIcon: _buscarCtrl.text.isEmpty
                             ? null
@@ -335,7 +437,11 @@ class _TareasScreenState extends State<TareasScreen> {
                           child: DropdownButtonFormField<String?>(
                             initialValue: _prioridadFiltro,
                             decoration: InputDecoration(
-                              labelText: appText(context, 'Prioridad', 'Priority'),
+                              labelText: appText(
+                                context,
+                                'Prioridad',
+                                'Priority',
+                              ),
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 12,
                                 vertical: 8,
@@ -343,18 +449,23 @@ class _TareasScreenState extends State<TareasScreen> {
                             ),
                             items: [
                               DropdownMenuItem(
-                                  value: null,
-                                  child: Text(appText(context, 'Todas', 'All'))),
+                                value: null,
+                                child: Text(appText(context, 'Todas', 'All')),
+                              ),
                               DropdownMenuItem(
-                                  value: 'alta',
-                                  child: Text(appText(context, 'Alta', 'High'))),
+                                value: 'alta',
+                                child: Text(appText(context, 'Alta', 'High')),
+                              ),
                               DropdownMenuItem(
-                                  value: 'media',
-                                  child: Text(
-                                      appText(context, 'Media', 'Medium'))),
+                                value: 'media',
+                                child: Text(
+                                  appText(context, 'Media', 'Medium'),
+                                ),
+                              ),
                               DropdownMenuItem(
-                                  value: 'baja',
-                                  child: Text(appText(context, 'Baja', 'Low'))),
+                                value: 'baja',
+                                child: Text(appText(context, 'Baja', 'Low')),
+                              ),
                             ],
                             onChanged: (value) =>
                                 setState(() => _prioridadFiltro = value),
@@ -364,16 +475,59 @@ class _TareasScreenState extends State<TareasScreen> {
                         OutlinedButton.icon(
                           onPressed: _filtrarPorFecha,
                           icon: const Icon(Icons.calendar_month),
-                          label: Text(_fechaFiltro == null
-                              ? appText(context, 'Fecha', 'Date')
-                              : '${_fechaFiltro!.day}/${_fechaFiltro!.month}'),
+                          label: Text(
+                            _fechaFiltro == null
+                                ? appText(context, 'Fecha', 'Date')
+                                : '${_fechaFiltro!.day}/${_fechaFiltro!.month}',
+                          ),
                         ),
                         if (_fechaFiltro != null)
                           IconButton(
                             tooltip: 'Quitar filtro de fecha',
-                            onPressed: () => setState(() => _fechaFiltro = null),
+                            onPressed: () =>
+                                setState(() => _fechaFiltro = null),
                             icon: const Icon(Icons.clear),
                           ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ChoiceChip(
+                            label: Text(
+                              _priorizarPorUrgencia
+                                  ? appText(context, 'Prioridad', 'Priority')
+                                  : appText(context, 'Fecha', 'Date'),
+                            ),
+                            selected: _priorizarPorUrgencia,
+                            onSelected: (_) => setState(
+                              () => _priorizarPorUrgencia =
+                                  !_priorizarPorUrgencia,
+                            ),
+                            selectedColor: AppColors.gold,
+                            backgroundColor: AppColors.surface,
+                            labelStyle: TextStyle(
+                              color: _priorizarPorUrgencia
+                                  ? Colors.white
+                                  : AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            side: BorderSide(
+                              color: _priorizarPorUrgencia
+                                  ? AppColors.gold
+                                  : AppColors.borderSoft,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton.icon(
+                          onPressed: _abrirModoEnfoque,
+                          icon: const Icon(Icons.filter_center_focus),
+                          label: const Text('Enfoque'),
+                        ),
                       ],
                     ),
                   ),
@@ -423,7 +577,10 @@ class _TareasScreenState extends State<TareasScreen> {
         runSpacing: 8,
         children: [
           chip(appText(context, 'Pendientes', 'Pending'), _Filtro.pendientes),
-          chip(appText(context, 'Completadas', 'Completed'), _Filtro.completadas),
+          chip(
+            appText(context, 'Completadas', 'Completed'),
+            _Filtro.completadas,
+          ),
           chip(appText(context, 'Todas', 'All'), _Filtro.todas),
         ],
       ),
@@ -441,10 +598,16 @@ class _TareasScreenState extends State<TareasScreen> {
             const SizedBox(height: 12),
             Text(
               _filtro == _Filtro.completadas
-                  ? appText(context, 'Aún no completas ninguna tarea.',
-                      'You have not completed any tasks yet.')
-                  : appText(context, 'No tienes tareas por aquí.\nToca + para crear una.',
-                      'No tasks here yet.\nTap + to create one.'),
+                  ? appText(
+                      context,
+                      'Aún no completas ninguna tarea.',
+                      'You have not completed any tasks yet.',
+                    )
+                  : appText(
+                      context,
+                      'No tienes tareas por aquí.\nToca + para crear una.',
+                      'No tasks here yet.\nTap + to create one.',
+                    ),
               textAlign: TextAlign.center,
               style: AppTypography.secondary,
             ),

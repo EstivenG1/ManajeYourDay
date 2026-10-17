@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
@@ -25,6 +26,22 @@ class _HomeTabState extends State<HomeTab> {
   List<Map<String, dynamic>> _tareasPendientes = [];
   int _tareasCompletadasMes = 0;
   int _tareasTotalesMes = 0;
+  List<Map<String, dynamic>> _metasActivas = [];
+  ResumenSemana _resumenSemana = const ResumenSemana(
+    tareasCompletadas: 0,
+    tareasTotales: 0,
+    ingresos: 0,
+    gastos: 0,
+    balance: 0,
+  );
+  ResumenMeta _resumenMetas = const ResumenMeta(
+    totalObjetivo: 0,
+    totalActual: 0,
+    metasActivas: 0,
+    porcentajeGeneral: 0,
+    nombreMetaMasCercana: 'Sin metas',
+    porcentajeMetaMasCercana: 0,
+  );
 
   @override
   void initState() {
@@ -41,7 +58,7 @@ class _HomeTabState extends State<HomeTab> {
       final inicioMesAnterior = DateTime(ahora.year, ahora.month - 1, 1);
       final movimientos = <Map<String, dynamic>>[];
       const tamanoPagina = 500;
-      for (var inicio = 0;; inicio += tamanoPagina) {
+      for (var inicio = 0; ; inicio += tamanoPagina) {
         final pagina = await supabase
             .from('movimientos')
             .select('tipo, monto, fecha')
@@ -87,7 +104,7 @@ class _HomeTabState extends State<HomeTab> {
       var totalGastadoPresupuestos = 0.0;
       for (final presupuesto in presupuestos as List) {
         totalLimites += (presupuesto['monto_limite'] as num).toDouble();
-        for (var inicio = 0;; inicio += tamanoPagina) {
+        for (var inicio = 0; ; inicio += tamanoPagina) {
           final gastado = await supabase
               .from('movimientos')
               .select('monto')
@@ -114,14 +131,41 @@ class _HomeTabState extends State<HomeTab> {
           .order('fecha_limite', ascending: true)
           .limit(5);
 
+      final metasActivas = await supabase
+          .from('metas_ahorro')
+          .select('nombre, monto_objetivo, monto_actual, estado')
+          .eq('usuario_id', userId)
+          .eq('estado', 'activa');
+      final resumenMetas = calcularResumenMetas(
+        List<Map<String, dynamic>>.from(metasActivas),
+      );
+
       final tareasMes = await supabase
           .from('tareas')
           .select('estado')
           .eq('usuario_id', userId)
           .gte('creado_en', inicioMes.toIso8601String());
 
-      final completadas =
-          (tareasMes as List).where((t) => t['estado'] == 'completada').length;
+      final semanaInicio = DateTime(
+        ahora.year,
+        ahora.month,
+        ahora.day - (ahora.weekday - 1),
+      );
+      final semanaFin = semanaInicio.add(const Duration(days: 6));
+      final tareasSemana = await supabase
+          .from('tareas')
+          .select('estado, fecha_limite')
+          .eq('usuario_id', userId)
+          .gte('fecha_limite', semanaInicio.toIso8601String())
+          .lte('fecha_limite', semanaFin.toIso8601String());
+
+      final completadas = (tareasMes as List)
+          .where((t) => t['estado'] == 'completada')
+          .length;
+      final resumenSemana = calcularResumenSemana(
+        movimientos: List<Map<String, dynamic>>.from(movimientos),
+        tareas: List<Map<String, dynamic>>.from(tareasSemana),
+      );
 
       if (!mounted) return;
       setState(() {
@@ -135,6 +179,9 @@ class _HomeTabState extends State<HomeTab> {
         _tareasPendientes = List<Map<String, dynamic>>.from(tareasPend);
         _tareasCompletadasMes = completadas;
         _tareasTotalesMes = tareasMes.length;
+        _metasActivas = List<Map<String, dynamic>>.from(metasActivas);
+        _resumenMetas = resumenMetas;
+        _resumenSemana = resumenSemana;
         _cargando = false;
         _errorCarga = null;
       });
@@ -201,14 +248,25 @@ class _HomeTabState extends State<HomeTab> {
           Text(hoy, style: AppTypography.secondary),
           const SizedBox(height: 4),
           Text(
-            appText(context, '¡Hola, ${widget.nombre ?? "de nuevo"}! 👋',
-                'Hello, ${widget.nombre ?? "again"}! 👋'),
+            appText(
+              context,
+              '¡Hola, ${widget.nombre ?? "de nuevo"}! 👋',
+              'Hello, ${widget.nombre ?? "again"}! 👋',
+            ),
             style: AppTypography.greeting,
           ),
           const SizedBox(height: 20),
 
           _tarjetaBalance(),
           const SizedBox(height: 18),
+          _resumenMetasCard(),
+          const SizedBox(height: 18),
+          _resumenSemanaCard(),
+          const SizedBox(height: 18),
+          if (_porcentajePresupuestoUsado != null) ...[
+            _alertaPresupuesto(),
+            const SizedBox(height: 18),
+          ],
           Row(
             children: [
               Expanded(
@@ -226,8 +284,12 @@ class _HomeTabState extends State<HomeTab> {
                   titulo: 'Balance',
                   valor: formatearMonto(balanceMes),
                   color: balanceMes >= 0 ? AppColors.green : AppColors.red,
-                  fondo: balanceMes >= 0 ? AppColors.greenChipBg : AppColors.redChipBg,
-                  borde: balanceMes >= 0 ? AppColors.greenChipBorder : AppColors.redChipBorder,
+                  fondo: balanceMes >= 0
+                      ? AppColors.greenChipBg
+                      : AppColors.redChipBg,
+                  borde: balanceMes >= 0
+                      ? AppColors.greenChipBorder
+                      : AppColors.redChipBorder,
                 ),
               ),
             ],
@@ -266,7 +328,13 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(titulo, style: AppTypography.secondary.copyWith(color: color, fontSize: 10.5)),
+          Text(
+            titulo,
+            style: AppTypography.secondary.copyWith(
+              color: color,
+              fontSize: 10.5,
+            ),
+          ),
           const SizedBox(height: 4),
           Text(
             valor,
@@ -284,7 +352,10 @@ class _HomeTabState extends State<HomeTab> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.xl2),
-        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Row(
         children: [
@@ -316,11 +387,18 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('BALANCE TOTAL DEL MES',
-              style: AppTypography.sectionLabel.copyWith(color: Colors.white70, fontSize: 12)),
+          Text(
+            'BALANCE TOTAL DEL MES',
+            style: AppTypography.sectionLabel.copyWith(
+              color: Colors.white70,
+              fontSize: 12,
+            ),
+          ),
           const SizedBox(height: 6),
-          Text(formatearMonto(balance),
-              style: AppTypography.balanceDisplay.copyWith(color: Colors.white)),
+          Text(
+            formatearMonto(balance),
+            style: AppTypography.balanceDisplay.copyWith(color: Colors.white),
+          ),
           const SizedBox(height: 18),
           Divider(color: Colors.white.withValues(alpha: 0.3)),
           const SizedBox(height: 14),
@@ -341,10 +419,223 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
+          ),
           const SizedBox(height: 2),
-          Text(valor,
-              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700)),
+          Text(
+            valor,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resumenMetasCard() {
+    final metaMasCercana = _resumenMetas.metasActivas > 0
+        ? '${_resumenMetas.nombreMetaMasCercana} • ${_resumenMetas.porcentajeMetaMasCercana.toStringAsFixed(0)}%'
+        : 'Sin metas activas';
+    final descripcionMetas = _metasActivas.isNotEmpty
+        ? '${_metasActivas.length} metas activas'
+        : 'Aún no tienes metas';
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('AVANCE DE METAS', style: AppTypography.sectionLabel),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _miniKpiResumen(
+                  titulo: 'Progreso',
+                  valor: '${_resumenMetas.porcentajeGeneral.toStringAsFixed(0)}%',
+                  subtitulo: descripcionMetas,
+                  color: AppColors.green,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniKpiResumen(
+                  titulo: 'Ahorro',
+                  valor: formatearMonto(_resumenMetas.totalActual),
+                  subtitulo: 'de ${formatearMonto(_resumenMetas.totalObjetivo)}',
+                  color: AppColors.goldDeep,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Más cerca: $metaMasCercana',
+            style: AppTypography.secondary.copyWith(fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _resumenSemanaCard() {
+    final porcentaje = _resumenSemana.tareasTotales > 0
+        ? (_resumenSemana.tareasCompletadas / _resumenSemana.tareasTotales) *
+              100
+        : 0.0;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('RESUMEN DE LA SEMANA', style: AppTypography.sectionLabel),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _miniKpiResumen(
+                  titulo: 'Tareas',
+                  valor:
+                      '${_resumenSemana.tareasCompletadas}/${_resumenSemana.tareasTotales}',
+                  subtitulo: _resumenSemana.tareasTotales > 0
+                      ? '${porcentaje.toStringAsFixed(0)}% hechas'
+                      : 'Sin tareas programadas',
+                  color: AppColors.goldDeep,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniKpiResumen(
+                  titulo: 'Gastos',
+                  valor: formatearMonto(_resumenSemana.gastos),
+                  subtitulo: 'Esta semana',
+                  color: AppColors.red,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _miniKpiResumen(
+                  titulo: 'Balance',
+                  valor: formatearMonto(_resumenSemana.balance),
+                  subtitulo: 'Semana actual',
+                  color: _resumenSemana.balance >= 0
+                      ? AppColors.green
+                      : AppColors.red,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniKpiResumen({
+    required String titulo,
+    required String valor,
+    required String subtitulo,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.goldSoftBg,
+        borderRadius: BorderRadius.circular(AppRadii.xl),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: AppTypography.secondary.copyWith(
+              fontSize: 10.5,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            valor,
+            style: AppTypography.itemTitle.copyWith(fontSize: 14, color: color),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            subtitulo,
+            style: AppTypography.secondary.copyWith(fontSize: 10),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _alertaPresupuesto() {
+    final porcentaje = _porcentajePresupuestoUsado ?? 0;
+    final color = porcentaje >= 90
+        ? AppColors.red
+        : porcentaje >= 75
+        ? AppColors.amber
+        : AppColors.green;
+    final texto = porcentaje >= 90
+        ? 'Estás muy cerca del límite de tus presupuestos.'
+        : porcentaje >= 75
+        ? 'Tu gasto acumulado ya está alto para esta semana.'
+        : 'Tu presupuesto va por buen camino esta semana.';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(
+          color: color.withValues(alpha: 0.4),
+          width: AppRadii.borderWidth,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.insights_rounded, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado',
+                  style: AppTypography.itemTitle.copyWith(color: color),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  texto,
+                  style: AppTypography.secondary.copyWith(fontSize: 12),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -363,7 +654,10 @@ class _HomeTabState extends State<HomeTab> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.xl2),
-        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -382,8 +676,13 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: widget.onVerTareas,
-                child: Text('Ver todas →',
-                    style: AppTypography.secondary.copyWith(color: AppColors.gold, fontWeight: FontWeight.w700)),
+                child: Text(
+                  'Ver todas →',
+                  style: AppTypography.secondary.copyWith(
+                    color: AppColors.gold,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
@@ -396,7 +695,8 @@ class _HomeTabState extends State<HomeTab> {
             final hora = fechaLimite != null
                 ? '${fechaLimite.hour.toString().padLeft(2, '0')}:${fechaLimite.minute.toString().padLeft(2, '0')}'
                 : 'Sin hora';
-            final color = coloresPrioridad[t['prioridad']] ?? AppColors.textTertiary;
+            final color =
+                coloresPrioridad[t['prioridad']] ?? AppColors.textTertiary;
             return Padding(
               padding: const EdgeInsets.symmetric(vertical: 7),
               child: Row(
@@ -404,7 +704,10 @@ class _HomeTabState extends State<HomeTab> {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -416,7 +719,9 @@ class _HomeTabState extends State<HomeTab> {
                   ),
                   Text(
                     hora,
-                    style: AppTypography.secondary.copyWith(color: AppColors.textTertiary),
+                    style: AppTypography.secondary.copyWith(
+                      color: AppColors.textTertiary,
+                    ),
                   ),
                 ],
               ),
@@ -433,7 +738,10 @@ class _HomeTabState extends State<HomeTab> {
       decoration: BoxDecoration(
         color: AppColors.goldSoftBg,
         borderRadius: BorderRadius.circular(AppRadii.xl2),
-        border: Border.all(color: AppColors.goldBorder, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.goldBorder,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,8 +751,14 @@ class _HomeTabState extends State<HomeTab> {
               const Text('✨ ', style: TextStyle(fontSize: 16)),
               Expanded(
                 child: Text(
-                  appText(context, 'RECOMENDACIONES PARA TI', 'SUGGESTIONS FOR YOU'),
-                  style: AppTypography.sectionLabel.copyWith(color: AppColors.goldDeep),
+                  appText(
+                    context,
+                    'RECOMENDACIONES PARA TI',
+                    'SUGGESTIONS FOR YOU',
+                  ),
+                  style: AppTypography.sectionLabel.copyWith(
+                    color: AppColors.goldDeep,
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -464,8 +778,13 @@ class _HomeTabState extends State<HomeTab> {
           ...consejos.map(
             (c) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
-              child: Text(c,
-                  style: AppTypography.bodyBase.copyWith(fontSize: 13.5, height: 1.45)),
+              child: Text(
+                c,
+                style: AppTypography.bodyBase.copyWith(
+                  fontSize: 13.5,
+                  height: 1.45,
+                ),
+              ),
             ),
           ),
         ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/services/home_utils.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/supabase/supabase_config.dart';
+import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
 
 class MovimientosRecurrentesScreen extends StatefulWidget {
@@ -294,7 +295,7 @@ class _MovimientoRecurrenteFormState
       _frecuencia = item['frecuencia'] as String;
       _categoriaId = item['categoria_id'] as int;
       _proxima = DateTime.parse(item['proxima_fecha']);
-      _monto.text = item['monto'].toString();
+      _monto.text = formatearMontoParaCampo(item['monto'] as num);
       _descripcion.text = item['descripcion'] as String? ?? '';
     }
     _cargarCategorias();
@@ -340,7 +341,7 @@ class _MovimientoRecurrenteFormState
       final datos = {
         'usuario_id': userId,
         'tipo': _tipo,
-        'monto': double.parse(_monto.text.replaceAll(',', '.')),
+        'monto': parseMontoEntrada(_monto.text)!,
         'categoria_id': _categoriaId,
         'descripcion': _descripcion.text.trim().isEmpty
             ? null
@@ -429,16 +430,13 @@ class _MovimientoRecurrenteFormState
                         },
                       ),
                       const SizedBox(height: 12),
-                      TextFormField(
+                      MoneyTextFormField(
                         controller: _monto,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Monto',
                         ),
-                        decoration: const InputDecoration(labelText: 'Monto'),
                         validator: (value) {
-                          final amount = double.tryParse(
-                            (value ?? '').replaceAll(',', '.'),
-                          );
+                          final amount = parseMontoEntrada(value ?? '');
                           return amount == null || amount <= 0
                               ? 'Ingresa un monto mayor que cero'
                               : null;

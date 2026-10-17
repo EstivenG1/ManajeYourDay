@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
@@ -88,11 +89,17 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
     }
   }
 
-  Future<void> _abrirFormulario({String tipoInicial = 'gasto', Map<String, dynamic>? movimiento}) async {
+  Future<void> _abrirFormulario({
+    String tipoInicial = 'gasto',
+    Map<String, dynamic>? movimiento,
+  }) async {
     final resultado = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => TransactionFormScreen(tipoInicial: tipoInicial, movimiento: movimiento),
+        builder: (_) => TransactionFormScreen(
+          tipoInicial: tipoInicial,
+          movimiento: movimiento,
+        ),
       ),
     );
     if (resultado == true) _cargar();
@@ -105,7 +112,10 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         title: const Text('¿Eliminar movimiento?'),
         content: Text('"${mov['descripcion'] ?? 'Movimiento'}" se eliminará.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
@@ -128,7 +138,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       body: _cargando
           ? Center(child: CircularProgressIndicator(color: AppColors.gold))
           : _errorCarga != null
-              ? _estadoErrorCarga()
+          ? _estadoErrorCarga()
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -153,8 +163,13 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                         ),
                       ),
                       icon: const Icon(Icons.ios_share),
-                      label: Text(appText(
-                          context, 'Exportar movimientos', 'Export transactions')),
+                      label: Text(
+                        appText(
+                          context,
+                          'Exportar movimientos',
+                          'Export transactions',
+                        ),
+                      ),
                     ),
                   ),
                   Row(
@@ -178,7 +193,11 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                   ),
                   const SizedBox(height: 24),
                   Text(
-                    appText(context, 'MOVIMIENTOS RECIENTES', 'RECENT TRANSACTIONS'),
+                    appText(
+                      context,
+                      'MOVIMIENTOS RECIENTES',
+                      'RECENT TRANSACTIONS',
+                    ),
                     style: AppTypography.sectionLabel,
                   ),
                   const SizedBox(height: 10),
@@ -186,10 +205,14 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 40),
                       child: Center(
-                        child: Text(appText(context,
-                                'Aún no tienes movimientos registrados.',
-                                'No transactions recorded yet.'),
-                            style: AppTypography.secondary),
+                        child: Text(
+                          appText(
+                            context,
+                            'Aún no tienes movimientos registrados.',
+                            'No transactions recorded yet.',
+                          ),
+                          style: AppTypography.secondary,
+                        ),
                       ),
                     )
                   else
@@ -241,8 +264,12 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             const Text('🎯', style: TextStyle(fontSize: 20)),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(appText(context, 'Metas de ahorro', 'Savings goals'),
-                  style: AppTypography.itemTitle.copyWith(color: AppColors.goldDeep)),
+              child: Text(
+                appText(context, 'Metas de ahorro', 'Savings goals'),
+                style: AppTypography.itemTitle.copyWith(
+                  color: AppColors.goldDeep,
+                ),
+              ),
             ),
             Icon(Icons.chevron_right, color: AppColors.goldDeep, size: 20),
           ],
@@ -270,8 +297,10 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             Icon(Icons.account_balance_wallet_outlined, color: AppColors.gold),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(appText(context, 'Gestionar presupuestos', 'Manage budgets'),
-                  style: AppTypography.itemTitle),
+              child: Text(
+                appText(context, 'Gestionar presupuestos', 'Manage budgets'),
+                style: AppTypography.itemTitle,
+              ),
             ),
             Icon(Icons.chevron_right, color: AppColors.textTertiary),
           ],
@@ -285,9 +314,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       borderRadius: BorderRadius.circular(AppRadii.xl2),
       onTap: () => Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => const MovimientosRecurrentesScreen(),
-        ),
+        MaterialPageRoute(builder: (_) => const MovimientosRecurrentesScreen()),
       ),
       child: Container(
         padding: const EdgeInsets.all(14),
@@ -301,9 +328,14 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             Icon(Icons.repeat, color: AppColors.gold),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(appText(context, 'Ingresos y pagos recurrentes',
-                      'Recurring income and bills'),
-                  style: AppTypography.itemTitle),
+              child: Text(
+                appText(
+                  context,
+                  'Ingresos y pagos recurrentes',
+                  'Recurring income and bills',
+                ),
+                style: AppTypography.itemTitle,
+              ),
             ),
             Icon(Icons.chevron_right, color: AppColors.textTertiary),
           ],
@@ -320,26 +352,41 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.xl3),
-        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(appText(context, 'BALANCE DISPONIBLE', 'AVAILABLE BALANCE'),
-              style: AppTypography.sectionLabel),
+          Text(
+            appText(context, 'BALANCE DISPONIBLE', 'AVAILABLE BALANCE'),
+            style: AppTypography.sectionLabel,
+          ),
           const SizedBox(height: 6),
           Text(formatearMonto(balance), style: AppTypography.balanceDisplay),
           const SizedBox(height: 16),
           Row(
             children: [
               Expanded(
-                child: _chipResumen('Ingresos', formatearMonto(_ingresos), finanzas.colorIngreso,
-                    finanzas.chipIngresoBg, finanzas.chipIngresoBorder),
+                child: _chipResumen(
+                  'Ingresos',
+                  formatearMonto(_ingresos),
+                  finanzas.colorIngreso,
+                  finanzas.chipIngresoBg,
+                  finanzas.chipIngresoBorder,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _chipResumen('Gastos', formatearMonto(_gastos), finanzas.colorGasto,
-                    finanzas.chipGastoBg, finanzas.chipGastoBorder),
+                child: _chipResumen(
+                  'Gastos',
+                  formatearMonto(_gastos),
+                  finanzas.colorGasto,
+                  finanzas.chipGastoBg,
+                  finanzas.chipGastoBorder,
+                ),
               ),
             ],
           ),
@@ -348,7 +395,13 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
     );
   }
 
-  Widget _chipResumen(String label, String valor, Color color, Color bg, Color borde) {
+  Widget _chipResumen(
+    String label,
+    String valor,
+    Color color,
+    Color bg,
+    Color borde,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -361,13 +414,24 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         children: [
           Text(label, style: AppTypography.secondary.copyWith(color: color)),
           const SizedBox(height: 2),
-          Text(valor, style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 15)),
+          Text(
+            valor,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 15,
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _botonAccion({required String texto, required Gradient gradiente, required VoidCallback onTap}) {
+  Widget _botonAccion({
+    required String texto,
+    required Gradient gradiente,
+    required VoidCallback onTap,
+  }) {
     return SizedBox(
       height: 52,
       child: DecoratedBox(
@@ -381,8 +445,14 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
             borderRadius: BorderRadius.circular(AppRadii.xl2),
             onTap: onTap,
             child: Center(
-              child: Text(texto,
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13.5)),
+              child: Text(
+                texto,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                ),
+              ),
             ),
           ),
         ),
@@ -395,7 +465,8 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
     final color = esIngreso ? finanzas.colorIngreso : finanzas.colorGasto;
     final categoria = m['categorias']?['nombre'] ?? 'Sin categoría';
     final fecha = DateTime.parse(m['fecha']);
-    final fechaTexto = '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}';
+    final fechaTexto =
+        '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -403,39 +474,67 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(finanzas.radioTarjeta),
-        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Row(
         children: [
           Container(
-            width: 40, height: 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppRadii.xl),
             ),
             alignment: Alignment.center,
-            child: Icon(esIngreso ? Icons.arrow_downward : Icons.arrow_upward, color: color, size: 18),
+            child: Icon(
+              esIngreso ? Icons.arrow_downward : Icons.arrow_upward,
+              color: color,
+              size: 18,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
-              onTap: () => _abrirFormulario(tipoInicial: m['tipo'], movimiento: m),
+              onTap: () =>
+                  _abrirFormulario(tipoInicial: m['tipo'], movimiento: m),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(m['descripcion']?.toString().isNotEmpty == true ? m['descripcion'] : categoria,
-                      style: AppTypography.itemTitle),
+                  Text(
+                    m['descripcion']?.toString().isNotEmpty == true
+                        ? m['descripcion']
+                        : categoria,
+                    style: AppTypography.itemTitle,
+                  ),
                   const SizedBox(height: 2),
-                  Text('$categoria · $fechaTexto',
-                      style: AppTypography.secondary.copyWith(color: AppColors.textTertiary, fontSize: 12)),
+                  Text(
+                    '$categoria · $fechaTexto',
+                    style: AppTypography.secondary.copyWith(
+                      color: AppColors.textTertiary,
+                      fontSize: 12,
+                    ),
+                  ),
                 ],
               ),
             ),
           ),
-          Text('${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
-              style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 14)),
+          Text(
+            '${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
           IconButton(
-            icon: Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 18),
+            icon: Icon(
+              Icons.delete_outline,
+              color: AppColors.textTertiary,
+              size: 18,
+            ),
             onPressed: () => _eliminar(m),
           ),
         ],
