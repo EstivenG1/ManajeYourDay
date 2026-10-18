@@ -8,6 +8,8 @@ import '../../features/auth/password_recovery_screen.dart';
 import '../../features/splash/welcome_screen.dart';
 import '../../features/home/home_shell.dart';
 
+final GlobalKey<NavigatorState> mydNavigatorKey = GlobalKey<NavigatorState>();
+
 /// Escucha el estado de sesión de Supabase y cambia automáticamente
 /// entre la pantalla de bienvenida y el inicio de la app.
 class AuthGate extends StatefulWidget {
@@ -20,6 +22,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   late Session? _session;
   bool _passwordRecoveryPending = false;
+  bool _recoveryRouteOpen = false;
   StreamSubscription<AuthState>? _authSubscription;
 
   @override
@@ -45,7 +48,36 @@ class _AuthGateState extends State<AuthGate> {
           _passwordRecoveryPending = true;
         }
       });
+      if (authState.event == AuthChangeEvent.passwordRecovery) {
+        _openRecoveryRoute();
+      }
     });
+  }
+
+  void _openRecoveryRoute() {
+    final navigator = mydNavigatorKey.currentState;
+    if (_recoveryRouteOpen || navigator == null) return;
+    _recoveryRouteOpen = true;
+    navigator
+        .push<void>(
+          MaterialPageRoute<void>(
+          builder: (_) => PasswordRecoveryScreen(
+            onCompleted: _completePasswordRecovery,
+          ),
+          ),
+        )
+        .whenComplete(() {
+          _recoveryRouteOpen = false;
+        });
+  }
+
+  void _completePasswordRecovery() {
+    if (!mounted) return;
+    setState(() => _passwordRecoveryPending = false);
+    final navigator = mydNavigatorKey.currentState;
+    if (_recoveryRouteOpen && navigator?.canPop() == true) {
+      navigator!.pop();
+    }
   }
 
   @override
@@ -58,7 +90,7 @@ class _AuthGateState extends State<AuthGate> {
   Widget build(BuildContext context) {
     if (_passwordRecoveryPending && _session != null) {
       return PasswordRecoveryScreen(
-        onCompleted: () => setState(() => _passwordRecoveryPending = false),
+        onCompleted: _completePasswordRecovery,
       );
     }
 

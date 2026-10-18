@@ -7,6 +7,7 @@ import '../../core/supabase/supabase_config.dart';
 import '../../core/auth/auth_errors.dart';
 import '../../core/services/google_auth_service.dart';
 import '../legal/legal_info_screen.dart';
+import 'password_recovery_request_dialog.dart';
 
 enum AuthTab { login, register }
 
@@ -48,33 +49,16 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 
   Future<void> _restablecerPassword() async {
-    final correo = _correoCtrl.text.trim();
-    if (!correo.contains('@') || !correo.contains('.')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Escribe un correo válido para enviarte el enlace.'),
+    await showDialog<void>(
+      context: context,
+      builder: (_) => PasswordRecoveryRequestDialog(
+        initialEmail: _correoCtrl.text.trim(),
+        onSend: (email) => supabase.auth.resetPasswordForEmail(
+          email,
+          redirectTo: SupabaseConfig.passwordRecoveryRedirect,
         ),
-      );
-      return;
-    }
-    try {
-      await supabase.auth.resetPasswordForEmail(
-        correo,
-        redirectTo: SupabaseConfig.passwordRecoveryRedirect,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Si la cuenta existe, recibirás un correo para restablecer tu contraseña.',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(mensajeErrorAuth(e))));
-    }
+      ),
+    );
   }
 
   Future<void> _enviar() async {

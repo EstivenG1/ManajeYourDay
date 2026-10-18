@@ -24,6 +24,7 @@ class MydApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: settings,
       builder: (context, _) => MaterialApp(
+        navigatorKey: mydNavigatorKey,
         title: 'MYD - Manage Your Day',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
