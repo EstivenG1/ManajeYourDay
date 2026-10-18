@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:storage_client/storage_client.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
@@ -18,20 +18,14 @@ class PerfilScreen extends StatefulWidget {
   State<PerfilScreen> createState() => _PerfilScreenState();
 }
 
-const _monedas = [
-  'COP',
-  'USD',
-  'MXN',
-  'EUR',
-  'ARS',
-  'CLP',
-  'PEN',
-];
+const _monedas = ['COP', 'USD', 'MXN', 'EUR', 'ARS', 'CLP', 'PEN'];
 
-const _idiomas = {
-  'es': 'Español',
-  'en': 'English',
-};
+const _idiomas = {'es': 'Español', 'en': 'English'};
+
+String? _textoMetadata(Map<String, dynamic> metadata, String key) {
+  final value = metadata[key];
+  return value is String ? value : null;
+}
 
 class _PerfilScreenState extends State<PerfilScreen> {
   final _nombreCtrl = TextEditingController();
@@ -73,21 +67,36 @@ class _PerfilScreenState extends State<PerfilScreen> {
           .from('perfiles')
           .select('*, planes(nombre)')
           .eq('id', userId)
-          .single();
+          .maybeSingle();
 
-      _nombreCtrl.text = data['nombre'] ?? '';
-      _apellidoCtrl.text = data['apellido'] ?? '';
-      _telefonoCtrl.text = data['telefono'] ?? '';
-      _ciudadCtrl.text = data['ciudad'] ?? '';
-      _paisCtrl.text = data['pais'] ?? '';
+      final metadata = user.userMetadata ?? const <String, dynamic>{};
+      final nombreMetadata =
+          _textoMetadata(metadata, 'nombre') ??
+          _textoMetadata(metadata, 'full_name') ??
+          _textoMetadata(metadata, 'name');
+      final nombreCuenta = nombreMetadata is String && nombreMetadata.isNotEmpty
+          ? nombreMetadata
+          : (user.email?.split('@').first ?? '');
 
-      _moneda = data['moneda'] ?? 'COP';
-      _idioma = data['idioma'] ?? 'es';
+      _nombreCtrl.text = data?['nombre'] as String? ?? nombreCuenta;
+      _apellidoCtrl.text =
+          data?['apellido'] as String? ??
+          _textoMetadata(metadata, 'apellido') ??
+          '';
+      _telefonoCtrl.text =
+          data?['telefono'] as String? ??
+          _textoMetadata(metadata, 'telefono') ??
+          '';
+      _ciudadCtrl.text = data?['ciudad'] as String? ?? '';
+      _paisCtrl.text = data?['pais'] as String? ?? '';
 
-      _avatarUrl = data['avatar_url'];
-      _correo = data['correo'];
+      _moneda = data?['moneda'] as String? ?? AppSettings.instance.currency;
+      _idioma = data?['idioma'] as String? ?? AppSettings.instance.language;
 
-      _nombrePlan = data['planes']?['nombre'] ?? 'Basico';
+      _avatarUrl = data?['avatar_url'] as String?;
+      _correo = data?['correo'] as String? ?? user.email;
+
+      _nombrePlan = data?['planes']?['nombre'] as String? ?? 'Basico';
       _escalaTexto = AppSettings.instance.textScale;
       await AppSettings.instance.setRegionalPreferences(
         currency: _moneda,
@@ -157,7 +166,9 @@ class _PerfilScreenState extends State<PerfilScreen> {
       final ruta = '$userId/avatar.jpg';
 
       // Subir o reemplazar la imagen.
-      await supabase.storage.from('avatars').uploadBinary(
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(
             ruta,
             bytes,
             fileOptions: const FileOptions(
@@ -167,21 +178,18 @@ class _PerfilScreenState extends State<PerfilScreen> {
           );
 
       // Obtener URL pública.
-      final url = supabase.storage
-          .from('avatars')
-          .getPublicUrl(ruta);
+      final url = supabase.storage.from('avatars').getPublicUrl(ruta);
 
       // Evitar caché del navegador.
-      final urlSinCache =
-          '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+      final urlSinCache = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
 
       // Guardar URL en la tabla perfiles.
       await supabase
           .from('perfiles')
-          .update({
-            'avatar_url': urlSinCache,
-          })
-          .eq('id', userId);
+          .upsert(
+            _datosPerfilParaGuardar(user, avatarUrl: urlSinCache),
+            onConflict: 'id',
+          );
       await AppSettings.instance.setRegionalPreferences(
         currency: _moneda,
         language: _idioma,
@@ -194,20 +202,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Foto de perfil actualizada ✅'),
-        ),
+        const SnackBar(content: Text('Foto de perfil actualizada ✅')),
       );
     } catch (e) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'No se pudo subir la foto: $e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('No se pudo subir la foto: $e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -233,43 +235,22 @@ class _PerfilScreenState extends State<PerfilScreen> {
         throw Exception('No hay una sesión activa.');
       }
 
-      final userId = user.id;
-
       await supabase
           .from('perfiles')
-          .update({
-            'nombre': _nombreCtrl.text.trim(),
-            'apellido': _apellidoCtrl.text.trim().isEmpty
-                ? null
-                : _apellidoCtrl.text.trim(),
-            'telefono': _telefonoCtrl.text.trim(),
-            'ciudad': _ciudadCtrl.text.trim().isEmpty
-                ? null
-                : _ciudadCtrl.text.trim(),
-            'pais': _paisCtrl.text.trim().isEmpty
-                ? null
-                : _paisCtrl.text.trim(),
-            'moneda': _moneda,
-            'idioma': _idioma,
-          })
-          .eq('id', userId);
+          .upsert(
+            _datosPerfilParaGuardar(user, avatarUrl: _avatarUrl),
+            onConflict: 'id',
+          );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Perfil actualizado ✅'),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Perfil actualizado ✅')));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'No se pudo guardar: $e',
-            ),
-          ),
-        );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
       }
     } finally {
       if (mounted) {
@@ -278,6 +259,25 @@ class _PerfilScreenState extends State<PerfilScreen> {
         });
       }
     }
+  }
+
+  Map<String, dynamic> _datosPerfilParaGuardar(User user, {String? avatarUrl}) {
+    return {
+      'id': user.id,
+      'correo': user.email,
+      'nombre': _nombreCtrl.text.trim(),
+      'apellido': _apellidoCtrl.text.trim().isEmpty
+          ? null
+          : _apellidoCtrl.text.trim(),
+      'telefono': _telefonoCtrl.text.trim(),
+      'ciudad': _ciudadCtrl.text.trim().isEmpty
+          ? null
+          : _ciudadCtrl.text.trim(),
+      'pais': _paisCtrl.text.trim().isEmpty ? null : _paisCtrl.text.trim(),
+      'moneda': _moneda,
+      'idioma': _idioma,
+      'avatar_url': avatarUrl,
+    };
   }
 
   // ============================================================
@@ -361,19 +361,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
         appBar: AppBar(
           title: Text(appText(context, 'Mi perfil', 'My profile')),
         ),
-        body: Center(
-          child: CircularProgressIndicator(
-            color: AppColors.gold,
-          ),
-        ),
+        body: Center(child: CircularProgressIndicator(color: AppColors.gold)),
       );
     }
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
-      appBar: AppBar(
-        title: Text(appText(context, 'Mi perfil', 'My profile')),
-      ),
+      appBar: AppBar(title: Text(appText(context, 'Mi perfil', 'My profile'))),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -390,262 +384,260 @@ class _PerfilScreenState extends State<PerfilScreen> {
                   ],
                 )
               : Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: _avatar(),
-              ),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(child: _avatar()),
 
-              const SizedBox(height: 8),
+                    const SizedBox(height: 8),
 
-              Center(
-                child: Text(
-                  _correo ?? '',
-                  style: AppTypography.secondary,
-                ),
-              ),
-
-              const SizedBox(height: 6),
-
-              Center(
-                child: _badgePlan(),
-              ),
-
-              const SizedBox(height: 8),
-              Text(
-                appText(
-                  context,
-                  'Los planes y funciones Premium se asignan desde el servicio MYD. '
-                      'La app todavía no procesa pagos ni cambios de suscripción.',
-                  'Plans and Premium features are managed by the MYD service. '
-                      'The app does not process payments or subscription changes yet.',
-                ),
-                textAlign: TextAlign.center,
-                style: AppTypography.secondary,
-              ),
-
-              const SizedBox(height: 28),
-
-              _seccionTitulo(appText(context, 'DATOS PERSONALES', 'PERSONAL DETAILS')),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: _campo(
-                      'Nombre',
-                      _nombreCtrl,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _campo(
-                      'Apellido (opcional)',
-                      _apellidoCtrl,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 14),
-
-              _campo(
-                'Teléfono',
-                _telefonoCtrl,
-                tipoTeclado: TextInputType.phone,
-              ),
-
-              const SizedBox(height: 14),
-
-              Row(
-                children: [
-                  Expanded(
-                    child: _campo(
-                      'Ciudad',
-                      _ciudadCtrl,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _campo(
-                      'País',
-                      _paisCtrl,
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 24),
-
-              _seccionTitulo(appText(context, 'AYUDA Y LEGAL', 'HELP AND LEGAL')),
-              Card(
-                child: ListTile(
-                  leading: Icon(Icons.help_outline_rounded, color: AppColors.gold),
-                  title: Text(
-                    appText(context, 'Centro de ayuda', 'Help center'),
-                    style: AppTypography.itemTitle,
-                  ),
-                  subtitle: Text(
-                    appText(
-                      context,
-                      'Guías de funciones, recorrido y documentos legales',
-                      'Feature guides, app tour, and legal documents',
-                    ),
-                    style: AppTypography.secondary,
-                  ),
-                  trailing: const Icon(Icons.chevron_right_rounded),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => CentroAyudaScreen(
-                        onReplayTour: widget.onReplayTour,
+                    Center(
+                      child: Text(
+                        _correo ?? '',
+                        style: AppTypography.secondary,
                       ),
                     ),
-                  ),
-                ),
-              ),
 
-              const SizedBox(height: 24),
+                    const SizedBox(height: 6),
 
-              _seccionTitulo(appText(context, 'PREFERENCIAS', 'PREFERENCES')),
+                    Center(child: _badgePlan()),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: _selectorMoneda(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _selectorIdioma(),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 18),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(appText(context, 'Modo oscuro', 'Dark mode')),
-                subtitle: Text(appText(
-                    context, 'Usar una apariencia oscura en la app', 'Use a dark appearance')),
-                value: AppSettings.instance.isDark,
-                onChanged: (value) => AppSettings.instance.setThemeMode(
-                  value ? ThemeMode.dark : ThemeMode.light,
-                ),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(appText(context, 'Alto contraste', 'High contrast')),
-                subtitle: Text(appText(context,
-                    'Aumentar el contraste de textos y bordes',
-                    'Increase text and border contrast')),
-                value: AppSettings.instance.highContrast,
-                onChanged: AppSettings.instance.setHighContrast,
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(appText(context, 'Notificaciones', 'Notifications')),
-                subtitle: Text(appText(context,
-                    'Recordatorios de tareas, metas y pagos',
-                    'Task, goal, and bill reminders')),
-                value: AppSettings.instance.notificationsEnabled,
-                onChanged: (value) async {
-                  await AppSettings.instance.setNotificationsEnabled(value);
-                  if (value) {
-                    await NotificationService.solicitarPermisos();
-                  } else {
-                    await NotificationService.cancelarTodas();
-                  }
-                },
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+                    const SizedBox(height: 8),
                     Text(
-                      '${appText(context, 'Tamaño del texto', 'Text size')}: '
-                      '${(_escalaTexto * 100).round()}%',
-                      style: AppTypography.itemTitle,
+                      appText(
+                        context,
+                        'Los planes y funciones Premium se asignan desde el servicio MYD. '
+                            'La app todavía no procesa pagos ni cambios de suscripción.',
+                        'Plans and Premium features are managed by the MYD service. '
+                            'The app does not process payments or subscription changes yet.',
+                      ),
+                      textAlign: TextAlign.center,
+                      style: AppTypography.secondary,
                     ),
-                    Slider(
-                      value: _escalaTexto,
-                      min: 0.85,
-                      max: 1.4,
-                      divisions: 11,
-                      label: '${(_escalaTexto * 100).round()}%',
-                      onChanged: (value) {
-                        setState(() => _escalaTexto = value);
-                        AppSettings.instance.setTextScale(value);
+
+                    const SizedBox(height: 28),
+
+                    _seccionTitulo(
+                      appText(context, 'DATOS PERSONALES', 'PERSONAL DETAILS'),
+                    ),
+
+                    Row(
+                      children: [
+                        Expanded(child: _campo('Nombre', _nombreCtrl)),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _campo('Apellido (opcional)', _apellidoCtrl),
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    _campo(
+                      'Teléfono',
+                      _telefonoCtrl,
+                      tipoTeclado: TextInputType.phone,
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    Row(
+                      children: [
+                        Expanded(child: _campo('Ciudad', _ciudadCtrl)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _campo('País', _paisCtrl)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    _seccionTitulo(
+                      appText(context, 'AYUDA Y LEGAL', 'HELP AND LEGAL'),
+                    ),
+                    Card(
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.help_outline_rounded,
+                          color: AppColors.gold,
+                        ),
+                        title: Text(
+                          appText(context, 'Centro de ayuda', 'Help center'),
+                          style: AppTypography.itemTitle,
+                        ),
+                        subtitle: Text(
+                          appText(
+                            context,
+                            'Guías de funciones, recorrido y documentos legales',
+                            'Feature guides, app tour, and legal documents',
+                          ),
+                          style: AppTypography.secondary,
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => CentroAyudaScreen(
+                              onReplayTour: widget.onReplayTour,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    _seccionTitulo(
+                      appText(context, 'PREFERENCIAS', 'PREFERENCES'),
+                    ),
+
+                    Row(
+                      children: [
+                        Expanded(child: _selectorMoneda()),
+                        const SizedBox(width: 12),
+                        Expanded(child: _selectorIdioma()),
+                      ],
+                    ),
+
+                    const SizedBox(height: 18),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(appText(context, 'Modo oscuro', 'Dark mode')),
+                      subtitle: Text(
+                        appText(
+                          context,
+                          'Usar una apariencia oscura en la app',
+                          'Use a dark appearance',
+                        ),
+                      ),
+                      value: AppSettings.instance.isDark,
+                      onChanged: (value) => AppSettings.instance.setThemeMode(
+                        value ? ThemeMode.dark : ThemeMode.light,
+                      ),
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        appText(context, 'Alto contraste', 'High contrast'),
+                      ),
+                      subtitle: Text(
+                        appText(
+                          context,
+                          'Aumentar el contraste de textos y bordes',
+                          'Increase text and border contrast',
+                        ),
+                      ),
+                      value: AppSettings.instance.highContrast,
+                      onChanged: AppSettings.instance.setHighContrast,
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        appText(context, 'Notificaciones', 'Notifications'),
+                      ),
+                      subtitle: Text(
+                        appText(
+                          context,
+                          'Recordatorios de tareas, metas y pagos',
+                          'Task, goal, and bill reminders',
+                        ),
+                      ),
+                      value: AppSettings.instance.notificationsEnabled,
+                      onChanged: (value) async {
+                        await AppSettings.instance.setNotificationsEnabled(
+                          value,
+                        );
+                        if (value) {
+                          await NotificationService.solicitarPermisos();
+                        } else {
+                          await NotificationService.cancelarTodas();
+                        }
                       },
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 28),
-
-              SizedBox(
-                height: 52,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: AppColors.goldGradient,
-                    borderRadius:
-                        BorderRadius.circular(AppRadii.xl2),
-                    boxShadow:
-                        AppColors.sombraPremium(AppColors.gold),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius:
-                          BorderRadius.circular(AppRadii.xl2),
-                      onTap: _guardando ? null : _guardar,
-                      child: Center(
-                        child: _guardando
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child:
-                                    CircularProgressIndicator(
-                                  strokeWidth: 2.2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Text(
-                                'Guardar cambios',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 15,
-                                ),
-                              ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${appText(context, 'Tamaño del texto', 'Text size')}: '
+                            '${(_escalaTexto * 100).round()}%',
+                            style: AppTypography.itemTitle,
+                          ),
+                          Slider(
+                            value: _escalaTexto,
+                            min: 0.85,
+                            max: 1.4,
+                            divisions: 11,
+                            label: '${(_escalaTexto * 100).round()}%',
+                            onChanged: (value) {
+                              setState(() => _escalaTexto = value);
+                              AppSettings.instance.setTextScale(value);
+                            },
+                          ),
+                        ],
                       ),
                     ),
-                  ),
+
+                    const SizedBox(height: 28),
+
+                    SizedBox(
+                      height: 52,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: AppColors.goldGradient,
+                          borderRadius: BorderRadius.circular(AppRadii.xl2),
+                          boxShadow: AppColors.sombraPremium(AppColors.gold),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(AppRadii.xl2),
+                            onTap: _guardando ? null : _guardar,
+                            child: Center(
+                              child: _guardando
+                                  ? const SizedBox(
+                                      height: 20,
+                                      width: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text(
+                                      'Guardar cambios',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 36),
+
+                    _seccionTitulo(
+                      appText(context, 'ZONA DE PELIGRO', 'DANGER ZONE'),
+                      color: AppColors.red,
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.red,
+                        side: BorderSide(color: AppColors.red),
+                      ),
+                      onPressed: _confirmarEliminarCuenta,
+                      child: Text(
+                        appText(context, 'Eliminar cuenta', 'Delete account'),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+                  ],
                 ),
-              ),
-
-              const SizedBox(height: 36),
-
-              _seccionTitulo(
-                appText(context, 'ZONA DE PELIGRO', 'DANGER ZONE'),
-                color: AppColors.red,
-              ),
-
-              const SizedBox(height: 8),
-
-              OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.red,
-                  side: BorderSide(
-                    color: AppColors.red,
-                  ),
-                ),
-                onPressed: _confirmarEliminarCuenta,
-                child: Text(appText(context, 'Eliminar cuenta', 'Delete account')),
-              ),
-
-              const SizedBox(height: 12),
-            ],
-          ),
         ),
       ),
     );
@@ -700,11 +692,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
                         color: Colors.white,
                       ),
                     )
-                  : const Icon(
-                      Icons.camera_alt,
-                      size: 14,
-                      color: Colors.white,
-                    ),
+                  : const Icon(Icons.camera_alt, size: 14, color: Colors.white),
             ),
           ),
         ],
@@ -718,17 +706,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   Widget _badgePlan() {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       decoration: BoxDecoration(
         color: AppColors.goldChipBg,
-        borderRadius:
-            BorderRadius.circular(AppRadii.full),
-        border: Border.all(
-          color: AppColors.goldBorder,
-        ),
+        borderRadius: BorderRadius.circular(AppRadii.full),
+        border: Border.all(color: AppColors.goldBorder),
       ),
       child: Text(
         'Plan ${_nombrePlan ?? "Básico"}',
@@ -745,19 +727,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
   // TITULOS
   // ============================================================
 
-  Widget _seccionTitulo(
-    String texto, {
-    Color? color,
-  }) {
+  Widget _seccionTitulo(String texto, {Color? color}) {
     return Padding(
-      padding: const EdgeInsets.only(
-        bottom: 10,
-      ),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Text(
         texto,
-        style: AppTypography.sectionLabel.copyWith(
-          color: color,
-        ),
+        style: AppTypography.sectionLabel.copyWith(color: color),
       ),
     );
   }
@@ -772,23 +747,13 @@ class _PerfilScreenState extends State<PerfilScreen> {
     TextInputType? tipoTeclado,
   }) {
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          etiqueta,
-          style:
-              AppTypography.secondary.copyWith(
-            fontSize: 11,
-          ),
-        ),
+        Text(etiqueta, style: AppTypography.secondary.copyWith(fontSize: 11)),
 
         const SizedBox(height: 4),
 
-        TextField(
-          controller: controller,
-          keyboardType: tipoTeclado,
-        ),
+        TextField(controller: controller, keyboardType: tipoTeclado),
       ],
     );
   }
@@ -799,28 +764,16 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   Widget _selectorMoneda() {
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'MONEDA',
-          style:
-              AppTypography.secondary.copyWith(
-            fontSize: 11,
-          ),
-        ),
+        Text('MONEDA', style: AppTypography.secondary.copyWith(fontSize: 11)),
 
         const SizedBox(height: 4),
 
         DropdownButtonFormField<String>(
           initialValue: _moneda,
           items: _monedas
-              .map(
-                (m) => DropdownMenuItem(
-                  value: m,
-                  child: Text(m),
-                ),
-              )
+              .map((m) => DropdownMenuItem(value: m, child: Text(m)))
               .toList(),
           onChanged: (v) {
             setState(() {
@@ -838,28 +791,16 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   Widget _selectorIdioma() {
     return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'IDIOMA',
-          style:
-              AppTypography.secondary.copyWith(
-            fontSize: 11,
-          ),
-        ),
+        Text('IDIOMA', style: AppTypography.secondary.copyWith(fontSize: 11)),
 
         const SizedBox(height: 4),
 
         DropdownButtonFormField<String>(
           initialValue: _idioma,
           items: _idiomas.entries
-              .map(
-                (e) => DropdownMenuItem(
-                  value: e.key,
-                  child: Text(e.value),
-                ),
-              )
+              .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
               .toList(),
           onChanged: (v) {
             setState(() {
