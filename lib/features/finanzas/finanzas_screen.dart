@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/localization/app_text.dart';
+import '../../core/formatters/category_emoji.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
@@ -9,6 +10,8 @@ import '../metas/metas_screen.dart';
 import 'presupuestos_screen.dart';
 import 'movimientos_recurrentes_screen.dart';
 import '../reportes/exportar_datos_screen.dart';
+import 'transaction_location_card.dart';
+import 'transaction_receipt_view.dart';
 
 class FinanzasScreen extends StatefulWidget {
   const FinanzasScreen({super.key});
@@ -124,6 +127,10 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       ),
     );
     if (confirmar == true) {
+      final comprobante = mov['comprobante_path'] as String?;
+      if (comprobante != null) {
+        await supabase.storage.from('receipts').remove([comprobante]);
+      }
       await supabase.from('movimientos').delete().eq('id', mov['id']);
       _cargar();
     }
@@ -460,6 +467,161 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
     );
   }
 
+  Future<void> _mostrarDetalleMovimiento(
+    Map<String, dynamic> movimiento,
+    FinanzasTheme finanzas,
+  ) async {
+    final esIngreso = movimiento['tipo'] == 'ingreso';
+    final color = esIngreso ? finanzas.colorIngreso : finanzas.colorGasto;
+    final categoria =
+        movimiento['categorias']?['nombre']?.toString() ?? 'Sin categoría';
+    final descripcion = movimiento['descripcion']?.toString().trim();
+    final fecha = DateTime.parse(movimiento['fecha']);
+    final latitud = (movimiento['ubicacion_latitud'] as num?)?.toDouble();
+    final longitud = (movimiento['ubicacion_longitud'] as num?)?.toDouble();
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => SafeArea(
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.82,
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+          decoration: BoxDecoration(
+            color: AppColors.bgPrimary,
+            borderRadius: const BorderRadius.vertical(
+              top: Radius.circular(AppRadii.xl3),
+            ),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AppColors.borderSoft,
+                      borderRadius: BorderRadius.circular(AppRadii.full),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Text(
+                      emojiCategoria(
+                        categoria,
+                        tipo: esIngreso ? 'ingreso' : 'gasto',
+                      ),
+                      style: const TextStyle(fontSize: 28),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            descripcion?.isNotEmpty == true
+                                ? descripcion!
+                                : categoria,
+                            style: AppTypography.screenTitle,
+                          ),
+                          Text(categoria, style: AppTypography.secondary),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      '${esIngreso ? '+' : '-'}${formatearMonto(movimiento['monto'])}',
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                _detalleFila(
+                  Icons.calendar_month_outlined,
+                  'Fecha',
+                  '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}',
+                ),
+                const SizedBox(height: 16),
+                Text('Ubicación', style: AppTypography.sectionLabel),
+                const SizedBox(height: 8),
+                if (movimiento['comprobante_path'] is String) ...[
+                  Text('Recibo', style: AppTypography.sectionLabel),
+                  const SizedBox(height: 8),
+                  TransactionReceiptView(
+                    path: movimiento['comprobante_path'] as String,
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (latitud != null && longitud != null)
+                  TransactionLocationCard(
+                    latitude: latitud,
+                    longitude: longitud,
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(AppRadii.xl2),
+                      border: Border.all(color: AppColors.borderSoft),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_off_outlined,
+                          color: AppColors.textTertiary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'No se guardó ubicación para este movimiento.',
+                            style: AppTypography.secondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _abrirFormulario(
+                      tipoInicial: movimiento['tipo'],
+                      movimiento: movimiento,
+                    );
+                  },
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Editar movimiento'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detalleFila(IconData icono, String etiqueta, String valor) {
+    return Row(
+      children: [
+        Icon(icono, color: AppColors.goldDeep, size: 19),
+        const SizedBox(width: 9),
+        Text('$etiqueta: ', style: AppTypography.secondary),
+        Expanded(child: Text(valor, style: AppTypography.itemTitle)),
+      ],
+    );
+  }
+
   Widget _itemMovimiento(Map<String, dynamic> m, FinanzasTheme finanzas) {
     final esIngreso = m['tipo'] == 'ingreso';
     final color = esIngreso ? finanzas.colorIngreso : finanzas.colorGasto;
@@ -489,17 +651,15 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
               borderRadius: BorderRadius.circular(AppRadii.xl),
             ),
             alignment: Alignment.center,
-            child: Icon(
-              esIngreso ? Icons.arrow_downward : Icons.arrow_upward,
-              color: color,
-              size: 18,
+            child: Text(
+              emojiCategoria(categoria, tipo: esIngreso ? 'ingreso' : 'gasto'),
+              style: const TextStyle(fontSize: 19),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: GestureDetector(
-              onTap: () =>
-                  _abrirFormulario(tipoInicial: m['tipo'], movimiento: m),
+              onTap: () => _mostrarDetalleMovimiento(m, finanzas),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

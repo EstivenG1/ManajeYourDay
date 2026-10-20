@@ -93,7 +93,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
       _moneda = data?['moneda'] as String? ?? AppSettings.instance.currency;
       _idioma = data?['idioma'] as String? ?? AppSettings.instance.language;
 
-      _avatarUrl = data?['avatar_url'] as String?;
+      final avatarRegistrado = data?['avatar_url'] as String?;
+      _avatarUrl = avatarRegistrado == null
+          ? null
+          : await supabase.storage
+                .from('avatars')
+                .createSignedUrl('$userId/avatar.jpg', 3600);
       _correo = data?['correo'] as String? ?? user.email;
 
       _nombrePlan = data?['planes']?['nombre'] as String? ?? 'Basico';
@@ -177,17 +182,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
             ),
           );
 
-      // Obtener URL pública.
-      final url = supabase.storage.from('avatars').getPublicUrl(ruta);
-
-      // Evitar caché del navegador.
-      final urlSinCache = '$url?t=${DateTime.now().millisecondsSinceEpoch}';
+      final url = await supabase.storage
+          .from('avatars')
+          .createSignedUrl(ruta, 3600);
 
       // Guardar URL en la tabla perfiles.
       await supabase
           .from('perfiles')
           .upsert(
-            _datosPerfilParaGuardar(user, avatarUrl: urlSinCache),
+            _datosPerfilParaGuardar(user, avatarUrl: ruta),
             onConflict: 'id',
           );
       await AppSettings.instance.setRegionalPreferences(
@@ -198,7 +201,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
       if (!mounted) return;
 
       setState(() {
-        _avatarUrl = urlSinCache;
+        _avatarUrl = url;
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -276,7 +279,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
       'pais': _paisCtrl.text.trim().isEmpty ? null : _paisCtrl.text.trim(),
       'moneda': _moneda,
       'idioma': _idioma,
-      'avatar_url': avatarUrl,
+      'avatar_url': avatarUrl == null ? null : '${user.id}/avatar.jpg',
     };
   }
 

@@ -52,11 +52,27 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   }
 
   Future<void> _cargarSugerencias() async {
-    final titulos = await SugerenciasService.obtener('tarea_titulo');
-    final horas = await SugerenciasService.obtener('tarea_hora', limite: 6);
+    const sugerenciasIniciales = [
+      'Revisar informe financiero',
+      'Pagar arriendo',
+      'Enviar propuesta al cliente',
+      'Hacer ejercicio',
+      'Llamar al banco',
+      'Estudiar para un examen',
+      'Comprar mercado',
+      'Organizar pendientes de la semana',
+    ];
+    var titulos = <String>[];
+    var horas = <String>[];
+    try {
+      titulos = await SugerenciasService.obtener('tarea_titulo');
+      horas = await SugerenciasService.obtener('tarea_hora', limite: 6);
+    } catch (_) {
+      // Las sugerencias iniciales siguen disponibles si no hay conexión.
+    }
     if (mounted) {
       setState(() {
-        _sugerenciasTitulo = titulos;
+        _sugerenciasTitulo = {...titulos, ...sugerenciasIniciales}.toList();
         _sugerenciasHora = horas;
         _guardando = false;
       });
@@ -167,9 +183,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
       appBar: AppBar(
-        title: Text(_editando
-            ? appText(context, 'Editar tarea', 'Edit task')
-            : appText(context, 'Nueva tarea', 'New task')),
+        title: Text(
+          _editando
+              ? appText(context, 'Editar tarea', 'Edit task')
+              : appText(context, 'Nueva tarea', 'New task'),
+        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -179,14 +197,20 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(appText(context, 'TÍTULO', 'TITLE'),
-                    style: AppTypography.sectionLabel),
+                Text(
+                  appText(context, 'TÍTULO', 'TITLE'),
+                  style: AppTypography.sectionLabel,
+                ),
                 const SizedBox(height: 8),
                 _campoTituloConAutocompletado(),
                 const SizedBox(height: 20),
 
                 Text(
-                  appText(context, 'DESCRIPCIÓN (opcional)', 'DESCRIPTION (optional)'),
+                  appText(
+                    context,
+                    'DESCRIPCIÓN (opcional)',
+                    'DESCRIPTION (optional)',
+                  ),
                   style: AppTypography.sectionLabel,
                 ),
                 const SizedBox(height: 8),
@@ -199,8 +223,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                Text(appText(context, 'FECHA Y HORA LÍMITE', 'DUE DATE AND TIME'),
-                    style: AppTypography.sectionLabel),
+                Text(
+                  appText(context, 'FECHA Y HORA LÍMITE', 'DUE DATE AND TIME'),
+                  style: AppTypography.sectionLabel,
+                ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -226,7 +252,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 if (_sugerenciasHora.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(
-                    appText(context, 'Horas que usas seguido:', 'Frequently used times:'),
+                    appText(
+                      context,
+                      'Horas que usas seguido:',
+                      'Frequently used times:',
+                    ),
                     style: AppTypography.secondary.copyWith(
                       color: AppColors.textTertiary,
                     ),
@@ -276,29 +306,39 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ],
                 const SizedBox(height: 20),
 
-                Text(appText(context, 'PRIORIDAD', 'PRIORITY'),
-                    style: AppTypography.sectionLabel),
+                Text(
+                  appText(context, 'PRIORIDAD', 'PRIORITY'),
+                  style: AppTypography.sectionLabel,
+                ),
                 const SizedBox(height: 8),
                 _selectorPrioridad(tema),
                 const SizedBox(height: 20),
-                Text(appText(context, 'REPETICIÓN', 'REPEAT'),
-                    style: AppTypography.sectionLabel),
+                Text(
+                  appText(context, 'REPETICIÓN', 'REPEAT'),
+                  style: AppTypography.sectionLabel,
+                ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
                   initialValue: _recurrencia,
                   items: [
                     DropdownMenuItem(
-                        value: 'ninguna',
-                        child: Text(appText(context, 'No se repite', 'Does not repeat'))),
+                      value: 'ninguna',
+                      child: Text(
+                        appText(context, 'No se repite', 'Does not repeat'),
+                      ),
+                    ),
                     DropdownMenuItem(
-                        value: 'diaria',
-                        child: Text(appText(context, 'Cada día', 'Daily'))),
+                      value: 'diaria',
+                      child: Text(appText(context, 'Cada día', 'Daily')),
+                    ),
                     DropdownMenuItem(
-                        value: 'semanal',
-                        child: Text(appText(context, 'Cada semana', 'Weekly'))),
+                      value: 'semanal',
+                      child: Text(appText(context, 'Cada semana', 'Weekly')),
+                    ),
                     DropdownMenuItem(
-                        value: 'mensual',
-                        child: Text(appText(context, 'Cada mes', 'Monthly'))),
+                      value: 'mensual',
+                      child: Text(appText(context, 'Cada mes', 'Monthly')),
+                    ),
                   ],
                   onChanged: (value) {
                     if (value != null) setState(() => _recurrencia = value);
@@ -342,8 +382,16 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                                 )
                               : Text(
                                   _editando
-                                      ? appText(context, 'Guardar cambios', 'Save changes')
-                                      : appText(context, 'Crear tarea', 'Create task'),
+                                      ? appText(
+                                          context,
+                                          'Guardar cambios',
+                                          'Save changes',
+                                        )
+                                      : appText(
+                                          context,
+                                          'Crear tarea',
+                                          'Create task',
+                                        ),
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.w700,
@@ -368,9 +416,17 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       initialValue: TextEditingValue(text: widget.tarea?['titulo'] ?? ''),
       optionsBuilder: (value) {
         if (value.text.trim().isEmpty) return _sugerenciasTitulo.take(5);
-        return _sugerenciasTitulo.where(
-          (s) => s.toLowerCase().contains(value.text.toLowerCase()),
+        final consulta = value.text.trim().toLowerCase();
+        final coincidencias = _sugerenciasTitulo.where(
+          (s) => s.toLowerCase().contains(consulta),
         );
+        final alInicio = coincidencias
+            .where((s) => s.toLowerCase().startsWith(consulta))
+            .toList();
+        final enElTexto = coincidencias
+            .where((s) => !s.toLowerCase().startsWith(consulta))
+            .toList();
+        return [...alInicio, ...enElTexto].take(6);
       },
       fieldViewBuilder: (context, controller, focusNode, onSubmit) {
         _tituloCtrl = controller;
@@ -407,10 +463,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                   final opcion = options.elementAt(i);
                   return ListTile(
                     dense: true,
-                    leading: Icon(
-                      Icons.history,
-                      color: AppColors.gold,
-                      size: 18,
+                    leading: Text(
+                      _emojiSugerencia(opcion),
+                      style: const TextStyle(fontSize: 16),
                     ),
                     title: Text(opcion, style: AppTypography.itemTitle),
                     onTap: () => onSelected(opcion),
@@ -422,6 +477,17 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         );
       },
     );
+  }
+
+  String _emojiSugerencia(String titulo) {
+    final texto = titulo.toLowerCase();
+    if (texto.contains('pagar') || texto.contains('banco')) return '💳';
+    if (texto.contains('comprar') || texto.contains('mercado')) return '🛒';
+    if (texto.contains('ejercicio') || texto.contains('caminar')) return '🏃';
+    if (texto.contains('estudiar') || texto.contains('examen')) return '📚';
+    if (texto.contains('llamar')) return '📞';
+    if (texto.contains('informe') || texto.contains('propuesta')) return '📝';
+    return '✨';
   }
 
   Widget _botonSelector({

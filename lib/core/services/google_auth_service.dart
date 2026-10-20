@@ -23,11 +23,25 @@ class GoogleAuthService {
       throw const AuthException('No se pudo obtener el token de Google.');
     }
 
-    await supabase.auth.signInWithIdToken(
+    final response = await supabase.auth.signInWithIdToken(
       provider: OAuthProvider.google,
       idToken: idToken,
       accessToken: authGoogle.accessToken,
     );
+
+    final user = response.user;
+    final metadata = user?.userMetadata ?? const <String, dynamic>{};
+    final createdAt = DateTime.tryParse(user?.createdAt ?? '');
+    final lastSignInAt = DateTime.tryParse(user?.lastSignInAt ?? '');
+    if (user != null &&
+        metadata['myd_welcome_pending'] == null &&
+        createdAt != null &&
+        lastSignInAt != null &&
+        lastSignInAt.difference(createdAt).abs() < const Duration(minutes: 5)) {
+      await supabase.auth.updateUser(
+        UserAttributes(data: {'myd_welcome_pending': true}),
+      );
+    }
 
     return true;
   }

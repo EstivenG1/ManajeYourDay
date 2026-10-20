@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>MYD usa tu ubicación al registrar un ingreso o gasto solo si activas esa opción.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>MYD usa el reconocimiento de voz cuando tocas el micrófono para dictar la descripción de un movimiento.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MYD accede al micrófono solo mientras dictas una descripción de movimiento.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

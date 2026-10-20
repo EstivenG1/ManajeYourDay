@@ -90,6 +90,7 @@ class _AuthScreenState extends State<AuthScreen> {
                     ? null
                     : _apellidoCtrl.text.trim(),
                 'telefono': _telefonoCtrl.text.trim(),
+                'myd_welcome_pending': true,
               },
             );
       if (!mounted) return;

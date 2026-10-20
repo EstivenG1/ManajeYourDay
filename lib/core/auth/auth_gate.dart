@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase/supabase_config.dart';
 import '../../features/auth/password_recovery_screen.dart';
 import '../../features/splash/welcome_screen.dart';
+import '../../features/splash/new_user_welcome_screen.dart';
 import '../../features/home/home_shell.dart';
 
 final GlobalKey<NavigatorState> mydNavigatorKey = GlobalKey<NavigatorState>();
@@ -22,6 +23,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   late Session? _session;
   bool _passwordRecoveryPending = false;
+  bool _showNewUserWelcome = false;
   bool _recoveryRouteOpen = false;
   StreamSubscription<AuthState>? _authSubscription;
 
@@ -29,13 +31,17 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
     _session = supabase.auth.currentSession;
+    _showNewUserWelcome =
+        _session?.user.userMetadata?['myd_welcome_pending'] == true;
     _passwordRecoveryPending =
-        _session != null &&
-        SupabaseConfig.consumePasswordRecoveryRedirect();
+        _session != null && SupabaseConfig.consumePasswordRecoveryRedirect();
     _authSubscription = supabase.auth.onAuthStateChange.listen((authState) {
       if (!mounted) return;
       setState(() {
         _session = authState.session;
+        _showNewUserWelcome =
+            authState.session?.user.userMetadata?['myd_welcome_pending'] ==
+            true;
         if (authState.event == AuthChangeEvent.passwordRecovery) {
           _passwordRecoveryPending = true;
           SupabaseConfig.consumePasswordRecoveryRedirect();
@@ -61,9 +67,8 @@ class _AuthGateState extends State<AuthGate> {
     navigator
         .push<void>(
           MaterialPageRoute<void>(
-          builder: (_) => PasswordRecoveryScreen(
-            onCompleted: _completePasswordRecovery,
-          ),
+            builder: (_) =>
+                PasswordRecoveryScreen(onCompleted: _completePasswordRecovery),
           ),
         )
         .whenComplete(() {
@@ -80,6 +85,24 @@ class _AuthGateState extends State<AuthGate> {
     }
   }
 
+  Future<void> _completeNewUserWelcome() async {
+    try {
+      await supabase.auth.updateUser(
+        UserAttributes(data: {'myd_welcome_pending': false}),
+      );
+      if (mounted) setState(() => _showNewUserWelcome = false);
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'No se pudo guardar el inicio. Revisa tu conexión e inténtalo de nuevo.',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   void dispose() {
     _authSubscription?.cancel();
@@ -89,11 +112,12 @@ class _AuthGateState extends State<AuthGate> {
   @override
   Widget build(BuildContext context) {
     if (_passwordRecoveryPending && _session != null) {
-      return PasswordRecoveryScreen(
-        onCompleted: _completePasswordRecovery,
-      );
+      return PasswordRecoveryScreen(onCompleted: _completePasswordRecovery);
     }
 
+    if (_session != null && _showNewUserWelcome) {
+      return NewUserWelcomeScreen(onContinue: _completeNewUserWelcome);
+    }
     if (_session != null) return const HomeShell();
     return const WelcomeScreen();
   }

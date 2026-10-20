@@ -14,19 +14,24 @@ mejor sus hábitos de gasto y productividad.
 - Repetir tareas a diario, semanal o mensualmente. Al completar una ocurrencia,
   MYD crea la siguiente.
 - Buscar tareas y filtrar por estado, prioridad y fecha.
+- Elegir entre tareas sugeridas y recibir autocompletado ordenado por lo que
+  más usas.
 
 ### Finanzas
 
-- Registrar ingresos y gastos por categoría.
-- Consultar los movimientos recientes y un balance calculado con el historial
-  completo del usuario.
-- Crear, editar y eliminar presupuestos por categoría y periodo; consultar el
-  consumo y el monto disponible.
-- Recibir alertas locales al acercarse o superar el límite de un presupuesto.
-- Programar recordatorios para ingresos y pagos periódicos. **Estos avisos no
-  crean movimientos automáticamente**: el usuario registra cada movimiento.
-
+- Registrar ingresos y gastos por categoria y elegir importes rapidos.
+- Guardar coordenadas solo cuando el usuario activa ubicacion para un movimiento.
+- Ver un mapa interactivo de OpenStreetMap con direccion aproximada del dispositivo.
+- Adjuntar un recibo privado y dictar la descripcion con reconocimiento local.
+- Crear presupuestos por categoria y recibir alertas al llegar al 75%.
+- Ver una proyeccion orientativa de balance al cierre de mes.
+- Programar movimientos recurrentes; estos generan recordatorios, no movimientos automaticos.
+- Consultar los movimientos y el balance calculado con el historial del usuario.
 ### Metas y reportes
+
+- En el inicio se ve una proyecciÃ³n orientativa del balance al cierre del mes y
+  alertas cuando un presupuesto por categorÃ­a llega al 75%.
+- El historial permite buscar texto en movimientos, tareas y aportes.
 
 - Crear metas de ahorro, registrar aportes y consultar su progreso e historial.
 - Definir un aporte y una frecuencia para recibir recordatorios.
@@ -40,6 +45,7 @@ mejor sus hábitos de gasto y productividad.
 ### Cuenta y accesibilidad
 
 - Iniciar sesión con correo/contraseña o Google.
+- Ver una bienvenida de inicio la primera vez que se registra la cuenta.
 - Editar el perfil y la foto de usuario.
 - Elegir moneda e idioma (español/inglés), modo oscuro, alto contraste, tamaño
   del texto y activar/desactivar notificaciones.
@@ -58,40 +64,29 @@ tendencias. No se envían datos a un modelo de IA generativa.
 - Flutter/Dart compatible con la versión de SDK indicada en `pubspec.yaml`.
 - Proyecto Supabase configurado para autenticación, base de datos y el bucket
   `avatars`.
+- Permisos de ubicación “mientras se usa” para capturar coordenadas a petición.
 
 ```powershell
 flutter pub get
 flutter run
 ```
 
-## Cambios de Supabase pendientes de aplicar
+## Supabase y migraciones
 
-La aplicación no ejecuta migraciones ni despliega funciones automáticamente.
-Antes de usar recurrencias de tareas, aportes programados, movimientos
-recurrentes o eliminación segura de cuenta:
+El proyecto enlazado ya tiene aplicadas las migraciones de recurrencias, avatares privados y ubicaciones. Para una copia nueva, revisa las migraciones de `supabase/migrations` y aplícalas en orden con `supabase db push` tras ejecutar `supabase login` y `supabase link`.
 
-1. Revisa y aplica
-   [`20261015000100_productivity_and_finance_extensions.sql`](./supabase/migrations/20261015000100_productivity_and_finance_extensions.sql)
-   con el flujo habitual del proyecto (`supabase db push` después de enlazar el
-   proyecto correcto). La migración amplía las tablas existentes `tareas` y
-   `metas_ahorro`, crea `movimientos_recurrentes`, activa RLS para esa tabla y
-   crea el RPC interno para borrar los datos de una cuenta.
-2. Despliega `supabase/functions/delete-account` con Supabase Functions. La
-   función valida el JWT del usuario y usa la clave `service_role` solo en el
-   entorno seguro del servidor; nunca debe incluirse en Flutter ni en el
-   repositorio.
-3. Confirma en el entorno de Supabase que las tablas existentes (`perfiles`,
-   `categorias`, `movimientos`, `presupuestos`, `tareas`, `metas_ahorro`,
-   `aportes_ahorro` y `sugerencias_texto`) usan las columnas de usuario
-   esperadas por la migración y que las políticas RLS están activas.
+La migración nueva `20261019000100_private_transaction_receipts.sql` crea la columna y el bucket privado para fotos de recibos. Aplícala antes de usar esa función. Después, despliega `supabase/functions/delete-account` para que la eliminación de cuenta también elimine los recibos privados.
 
-La eliminación es irreversible. La función borra primero los datos del usuario
-y su avatar, y después elimina su usuario de Auth. Si el RPC no está desplegado,
-la solicitud falla explícitamente y no muestra un falso éxito.
+El dictado solo intenta reconocimiento en el dispositivo. Si el sistema no tiene el modelo de voz disponible, MYD no envía el audio a un servicio remoto como alternativa.
+## Protección de fotos de perfil
 
-Los recordatorios son notificaciones locales del dispositivo; dependen de los
-permisos del sistema. Las ocurrencias recurrentes no se contabilizan como
-movimientos financieros automáticamente.
+La migración [`20261018000100_private_avatars.sql`](./supabase/migrations/20261018000100_private_avatars.sql)
+configura `avatars` como bucket privado y limita el acceso a objetos dentro de
+la carpeta del usuario autenticado. Debe aplicarse en Supabase antes de publicar
+la versión que usa URLs firmadas. Verifica en el proyecto las políticas efectivas
+de `storage.objects` y prueba lectura, carga y eliminación con dos cuentas
+distintas; la política restrictiva de la migración bloquea acceso cruzado aunque
+existan políticas permisivas anteriores.
 
 ## Alcance no incluido
 

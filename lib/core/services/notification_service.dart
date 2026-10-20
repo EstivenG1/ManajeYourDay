@@ -12,6 +12,16 @@ class NotificationService {
 
   static bool _listo = false;
 
+  // Notification plugin IDs must remain stable across app launches so an
+  // existing reminder can be replaced or cancelled on every platform.
+  static int _notificationId(String key) {
+    var hash = 0x811c9dc5;
+    for (final codeUnit in key.codeUnits) {
+      hash = ((hash ^ codeUnit) * 0x01000193) & 0xffffffff;
+    }
+    return hash & 0x7fffffff;
+  }
+
   /// Inicializa el sistema de notificaciones.
   static Future<void> init() async {
     tz_data.initializeTimeZones();
@@ -92,7 +102,7 @@ class NotificationService {
     if (momento.isBefore(DateTime.now())) return;
 
     await _plugin.zonedSchedule(
-      tareaId.hashCode,
+      _notificationId('tarea:$tareaId'),
       'Tarea próxima a vencer ⏰',
       titulo,
       tz.TZDateTime.from(momento, tz.local),
@@ -116,7 +126,7 @@ class NotificationService {
   static Future<void> cancelarRecordatorioTarea(
     String tareaId,
   ) async {
-    await _plugin.cancel(tareaId.hashCode);
+    await _plugin.cancel(_notificationId('tarea:$tareaId'));
   }
 
   static Future<void> programarRecordatorioFinanciero({
@@ -134,7 +144,7 @@ class NotificationService {
     ).subtract(const Duration(days: 1));
     if (aviso.isBefore(DateTime.now())) return;
     await _plugin.zonedSchedule(
-      ('finanzas_$recurrenciaId').hashCode,
+      _notificationId('finanzas:$recurrenciaId'),
       tipo == 'gasto' ? 'Pago próximo 💳' : 'Ingreso próximo 💰',
       descripcion,
       tz.TZDateTime.from(aviso, tz.local),
@@ -149,7 +159,7 @@ class NotificationService {
   }
 
   static Future<void> cancelarRecordatorioFinanciero(String id) async {
-    await _plugin.cancel(('finanzas_$id').hashCode);
+    await _plugin.cancel(_notificationId('finanzas:$id'));
   }
 
   static Future<void> programarRecordatorioMeta({
@@ -171,7 +181,7 @@ class NotificationService {
       9,
     );
     await _plugin.zonedSchedule(
-      ('meta_$metaId').hashCode,
+      _notificationId('meta:$metaId'),
       'Recuerda tu aporte a "$nombre" 🎯',
       'Tu aporte ${frecuencia == 'mensual' ? 'mensual' : frecuencia} '
           'programado es de ${aporte.toStringAsFixed(0)}.',
@@ -187,7 +197,7 @@ class NotificationService {
   }
 
   static Future<void> cancelarRecordatorioMeta(String metaId) =>
-      _plugin.cancel(('meta_$metaId').hashCode);
+      _plugin.cancel(_notificationId('meta:$metaId'));
 
   static Future<void> mostrarHitoMeta({
     required String metaId,
@@ -195,7 +205,7 @@ class NotificationService {
     required int porcentaje,
   }) async {
     await _mostrarAhora(
-      id: ('meta_hito_${metaId}_$porcentaje').hashCode,
+      id: _notificationId('meta_hito:$metaId:$porcentaje'),
       titulo: '¡Hito de ahorro alcanzado! 🎉',
       cuerpo: '"$nombre" llegó al $porcentaje% de su objetivo.',
     );

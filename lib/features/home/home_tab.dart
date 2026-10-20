@@ -8,8 +8,14 @@ import '../../core/services/home_utils.dart';
 class HomeTab extends StatefulWidget {
   final String? nombre;
   final VoidCallback onVerTareas;
+  final VoidCallback onVerFinanzas;
 
-  const HomeTab({super.key, required this.nombre, required this.onVerTareas});
+  const HomeTab({
+    super.key,
+    required this.nombre,
+    required this.onVerTareas,
+    required this.onVerFinanzas,
+  });
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -22,6 +28,8 @@ class _HomeTabState extends State<HomeTab> {
   double _gastosMes = 0;
   double _gastosMesAnterior = 0;
   double? _porcentajePresupuestoUsado;
+  final List<Map<String, dynamic>> _alertasPresupuesto = [];
+  double _proyeccionBalanceMes = 0;
   int _totalMovimientos = 0;
   List<Map<String, dynamic>> _tareasPendientes = [];
   int _tareasCompletadasMes = 0;
@@ -96,12 +104,15 @@ class _HomeTabState extends State<HomeTab> {
 
       final presupuestos = await supabase
           .from('presupuestos')
-          .select('monto_limite, categoria_id, fecha_inicio, fecha_fin')
+          .select(
+            'monto_limite, categoria_id, fecha_inicio, fecha_fin, categorias(nombre)',
+          )
           .eq('usuario_id', userId)
           .lte('fecha_inicio', _fechaTexto(ahora))
           .gte('fecha_fin', _fechaTexto(ahora));
       var totalLimites = 0.0;
       var totalGastadoPresupuestos = 0.0;
+      final alertasPresupuesto = <Map<String, dynamic>>[];
       for (final presupuesto in presupuestos as List) {
         totalLimites += (presupuesto['monto_limite'] as num).toDouble();
         for (var inicio = 0; ; inicio += tamanoPagina) {
@@ -115,13 +126,28 @@ class _HomeTabState extends State<HomeTab> {
               .lte('fecha', presupuesto['fecha_fin'])
               .order('id')
               .range(inicio, inicio + tamanoPagina - 1);
-          totalGastadoPresupuestos += (gastado as List).fold<double>(
+          final totalCategoria = (gastado as List).fold<double>(
             0,
             (sum, item) => sum + (item['monto'] as num).toDouble(),
           );
+          totalGastadoPresupuestos += totalCategoria;
+          final limite = (presupuesto['monto_limite'] as num).toDouble();
+          final porcentajeCategoria = totalCategoria / limite * 100;
+          if (porcentajeCategoria >= 75) {
+            alertasPresupuesto.add({
+              'nombre': presupuesto['categorias']?['nombre'] ?? 'Categoría',
+              'porcentaje': porcentajeCategoria,
+            });
+          }
           if (gastado.length < tamanoPagina) break;
         }
       }
+      alertasPresupuesto.sort(
+        (a, b) =>
+            (b['porcentaje'] as double).compareTo(a['porcentaje'] as double),
+      );
+      final diasMes = DateTime(ahora.year, ahora.month + 1, 0).day;
+      final gastosProyectados = gastos * diasMes / ahora.day;
 
       final tareasPend = await supabase
           .from('tareas')
@@ -175,6 +201,10 @@ class _HomeTabState extends State<HomeTab> {
         _porcentajePresupuestoUsado = totalLimites <= 0
             ? null
             : totalGastadoPresupuestos / totalLimites * 100;
+        _alertasPresupuesto
+          ..clear()
+          ..addAll(alertasPresupuesto.take(3));
+        _proyeccionBalanceMes = ingresos - gastosProyectados;
         _totalMovimientos = movimientosMes;
         _tareasPendientes = List<Map<String, dynamic>>.from(tareasPend);
         _tareasCompletadasMes = completadas;
@@ -256,14 +286,37 @@ class _HomeTabState extends State<HomeTab> {
             style: AppTypography.greeting,
           ),
           const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: widget.onVerFinanzas,
+                  icon: const Icon(Icons.add_card_rounded),
+                  label: const Text('Registrar movimiento'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: widget.onVerTareas,
+                  icon: const Icon(Icons.add_task_rounded),
+                  label: const Text('Nueva tarea'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
 
           _tarjetaBalance(),
+          const SizedBox(height: 18),
+          _tarjetaProyeccion(),
           const SizedBox(height: 18),
           _resumenMetasCard(),
           const SizedBox(height: 18),
           _resumenSemanaCard(),
           const SizedBox(height: 18),
-          if (_porcentajePresupuestoUsado != null) ...[
+          if (_alertasPresupuesto.isNotEmpty ||
+              _porcentajePresupuestoUsado != null) ...[
             _alertaPresupuesto(),
             const SizedBox(height: 18),
           ],
@@ -414,6 +467,49 @@ class _HomeTabState extends State<HomeTab> {
     );
   }
 
+  Widget _tarjetaProyeccion() {
+    final color = _proyeccionBalanceMes >= 0 ? AppColors.green : AppColors.red;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(color: AppColors.borderSoft),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.trending_up_rounded, color: color, size: 25),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _totalMovimientos == 0
+                      ? 'Proyección mensual'
+                      : 'Proyección al cierre del mes',
+                  style: AppTypography.itemTitle,
+                ),
+                Text(
+                  _totalMovimientos == 0
+                      ? 'Registra actividad para estimarla'
+                      : 'Si mantienes el ritmo de gasto actual',
+                  style: AppTypography.secondary.copyWith(fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            _totalMovimientos == 0
+                ? '—'
+                : formatearMonto(_proyeccionBalanceMes),
+            style: AppTypography.itemTitle.copyWith(color: color),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _datoBalance(String label, String valor) {
     return Expanded(
       child: Column(
@@ -465,7 +561,8 @@ class _HomeTabState extends State<HomeTab> {
               Expanded(
                 child: _miniKpiResumen(
                   titulo: 'Progreso',
-                  valor: '${_resumenMetas.porcentajeGeneral.toStringAsFixed(0)}%',
+                  valor:
+                      '${_resumenMetas.porcentajeGeneral.toStringAsFixed(0)}%',
                   subtitulo: descripcionMetas,
                   color: AppColors.green,
                 ),
@@ -475,7 +572,8 @@ class _HomeTabState extends State<HomeTab> {
                 child: _miniKpiResumen(
                   titulo: 'Ahorro',
                   valor: formatearMonto(_resumenMetas.totalActual),
-                  subtitulo: 'de ${formatearMonto(_resumenMetas.totalObjetivo)}',
+                  subtitulo:
+                      'de ${formatearMonto(_resumenMetas.totalObjetivo)}',
                   color: AppColors.goldDeep,
                 ),
               ),
@@ -594,7 +692,9 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Widget _alertaPresupuesto() {
-    final porcentaje = _porcentajePresupuestoUsado ?? 0;
+    final porcentaje = _alertasPresupuesto.isNotEmpty
+        ? _alertasPresupuesto.first['porcentaje'] as double
+        : _porcentajePresupuestoUsado ?? 0;
     final color = porcentaje >= 90
         ? AppColors.red
         : porcentaje >= 75
@@ -625,12 +725,21 @@ class _HomeTabState extends State<HomeTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado',
+                  _alertasPresupuesto.isNotEmpty
+                      ? 'Límites por categoría cerca del tope'
+                      : 'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado',
                   style: AppTypography.itemTitle.copyWith(color: color),
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  texto,
+                  _alertasPresupuesto.isNotEmpty
+                      ? _alertasPresupuesto
+                            .map(
+                              (alerta) =>
+                                  '${alerta['nombre']}: ${(alerta['porcentaje'] as double).toStringAsFixed(0)}%',
+                            )
+                            .join(' · ')
+                      : texto,
                   style: AppTypography.secondary.copyWith(fontSize: 12),
                 ),
               ],

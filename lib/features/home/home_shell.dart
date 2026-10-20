@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/localization/app_text.dart';
 import '../../core/services/guided_tour.dart';
 import '../../core/services/home_utils.dart';
@@ -28,11 +29,11 @@ class _HomeShellState extends State<HomeShell> {
   final GlobalKey _perfilTourKey = GlobalKey();
 
   List<String> _titulos(BuildContext context) => [
-        appText(context, 'Inicio', 'Home'),
-        appText(context, 'Finanzas', 'Finance'),
-        appText(context, 'Tareas', 'Tasks'),
-        appText(context, 'Reportes', 'Reports'),
-      ];
+    appText(context, 'Inicio', 'Home'),
+    appText(context, 'Finanzas', 'Finance'),
+    appText(context, 'Tareas', 'Tasks'),
+    appText(context, 'Reportes', 'Reports'),
+  ];
 
   @override
   void initState() {
@@ -83,7 +84,11 @@ class _HomeShellState extends State<HomeShell> {
           ),
           TutorialStep(
             target: _tareasTourKey,
-            title: appText(context, 'Prioriza lo importante', 'Prioritize what matters'),
+            title: appText(
+              context,
+              'Prioriza lo importante',
+              'Prioritize what matters',
+            ),
             description: appText(
               context,
               'Organiza tus tareas, filtra por fecha o prioridad y usa el modo enfoque para elegir qué hacer primero.',
@@ -94,7 +99,11 @@ class _HomeShellState extends State<HomeShell> {
           ),
           TutorialStep(
             target: _reportesTourKey,
-            title: appText(context, 'Entiende tu progreso', 'Understand your progress'),
+            title: appText(
+              context,
+              'Entiende tu progreso',
+              'Understand your progress',
+            ),
             description: appText(
               context,
               'Consulta tendencias y comparativos para identificar cómo evolucionan tus finanzas y hábitos.',
@@ -105,7 +114,11 @@ class _HomeShellState extends State<HomeShell> {
           ),
           TutorialStep(
             target: _perfilTourKey,
-            title: appText(context, 'Tu cuenta y preferencias', 'Your account and preferences'),
+            title: appText(
+              context,
+              'Tu cuenta y preferencias',
+              'Your account and preferences',
+            ),
             description: appText(
               context,
               'Desde aquí accedes a tu perfil, historial de actividad y opciones para cerrar sesión.',
@@ -127,8 +140,14 @@ class _HomeShellState extends State<HomeShell> {
   Future<void> _cargarPerfil() async {
     try {
       final userId = supabase.auth.currentUser!.id;
-      final data =
-          await supabase.from('perfiles').select().eq('id', userId).single();
+      final data = Map<String, dynamic>.from(
+        await supabase.from('perfiles').select().eq('id', userId).single(),
+      );
+      if (data['avatar_url'] != null) {
+        data['avatar_url'] = await supabase.storage
+            .from('avatars')
+            .createSignedUrl('$userId/avatar.jpg', 3600);
+      }
       if (mounted) setState(() => _perfil = data);
     } catch (_) {}
   }
@@ -177,7 +196,10 @@ class _HomeShellState extends State<HomeShell> {
                         ? Text(
                             nombre.isNotEmpty ? nombre[0].toUpperCase() : '👤',
                             style: const TextStyle(
-                                color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18),
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18,
+                            ),
                           )
                         : null,
                   ),
@@ -186,8 +208,10 @@ class _HomeShellState extends State<HomeShell> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(nombre,
-                            style: AppTypography.itemTitle.copyWith(fontSize: 16)),
+                        Text(
+                          nombre,
+                          style: AppTypography.itemTitle.copyWith(fontSize: 16),
+                        ),
                         Text(correo, style: AppTypography.secondary),
                       ],
                     ),
@@ -199,15 +223,16 @@ class _HomeShellState extends State<HomeShell> {
               const SizedBox(height: 8),
               ListTile(
                 leading: Icon(Icons.person_outline, color: AppColors.gold),
-                title: Text(appText(context, 'Mi perfil', 'My profile'),
-                    style: AppTypography.itemTitle),
+                title: Text(
+                  appText(context, 'Mi perfil', 'My profile'),
+                  style: AppTypography.itemTitle,
+                ),
                 onTap: () async {
                   Navigator.pop(context);
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) =>
-                          PerfilScreen(onReplayTour: _repetirTour),
+                      builder: (_) => PerfilScreen(onReplayTour: _repetirTour),
                     ),
                   );
                   _cargarPerfil(); // refresca por si cambió el nombre/foto
@@ -216,8 +241,13 @@ class _HomeShellState extends State<HomeShell> {
               ListTile(
                 leading: Icon(Icons.history, color: AppColors.gold),
                 title: Text(
-                    appText(context, 'Historial de actividad', 'Activity history'),
-                    style: AppTypography.itemTitle),
+                  appText(
+                    context,
+                    'Historial de actividad',
+                    'Activity history',
+                  ),
+                  style: AppTypography.itemTitle,
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(
@@ -228,8 +258,10 @@ class _HomeShellState extends State<HomeShell> {
               ),
               ListTile(
                 leading: Icon(Icons.logout, color: AppColors.red),
-                title: Text(appText(context, 'Cerrar sesión', 'Sign out'),
-                    style: AppTypography.itemTitle.copyWith(color: AppColors.red)),
+                title: Text(
+                  appText(context, 'Cerrar sesión', 'Sign out'),
+                  style: AppTypography.itemTitle.copyWith(color: AppColors.red),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   _cerrarSesion();
@@ -248,7 +280,11 @@ class _HomeShellState extends State<HomeShell> {
     final avatarUrl = _perfil?['avatar_url'] as String?;
 
     final tabs = [
-      HomeTab(nombre: nombre, onVerTareas: () => _irATab(2)),
+      HomeTab(
+        nombre: nombre,
+        onVerTareas: () => _irATab(2),
+        onVerFinanzas: () => _irATab(1),
+      ),
       const FinanzasScreen(),
       const TareasScreen(),
       const ReportesScreen(),
@@ -266,10 +302,14 @@ class _HomeShellState extends State<HomeShell> {
               onTap: _mostrarMenuPerfil,
               child: CircleAvatar(
                 backgroundColor: AppColors.gold,
-                backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                backgroundImage: avatarUrl != null
+                    ? NetworkImage(avatarUrl)
+                    : null,
                 child: avatarUrl == null
                     ? Text(
-                        (nombre != null && nombre.isNotEmpty) ? nombre[0].toUpperCase() : '👤',
+                        (nombre != null && nombre.isNotEmpty)
+                            ? nombre[0].toUpperCase()
+                            : '👤',
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
@@ -299,13 +339,19 @@ class _HomeShellState extends State<HomeShell> {
           ),
           NavigationDestination(
             key: _finanzasTourKey,
-            icon: Icon(Icons.attach_money_outlined, color: AppColors.textTertiary),
+            icon: Icon(
+              Icons.attach_money_outlined,
+              color: AppColors.textTertiary,
+            ),
             selectedIcon: Icon(Icons.attach_money, color: AppColors.gold),
             label: appText(context, 'Finanzas', 'Finance'),
           ),
           NavigationDestination(
             key: _tareasTourKey,
-            icon: Icon(Icons.check_circle_outline, color: AppColors.textTertiary),
+            icon: Icon(
+              Icons.check_circle_outline,
+              color: AppColors.textTertiary,
+            ),
             selectedIcon: Icon(Icons.check_circle, color: AppColors.gold),
             label: appText(context, 'Tareas', 'Tasks'),
           ),

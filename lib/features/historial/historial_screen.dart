@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/services/historial_service.dart';
 
@@ -12,6 +13,7 @@ class HistorialScreen extends StatefulWidget {
 enum _Periodo { dias7, dias30, todo }
 
 class _HistorialScreenState extends State<HistorialScreen> {
+  final _busquedaCtrl = TextEditingController();
   bool _cargando = true;
   String? _errorCarga;
   List<HistorialItem> _items = [];
@@ -22,6 +24,12 @@ class _HistorialScreenState extends State<HistorialScreen> {
   void initState() {
     super.initState();
     _cargar();
+  }
+
+  @override
+  void dispose() {
+    _busquedaCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _cargar() async {
@@ -58,7 +66,20 @@ class _HistorialScreenState extends State<HistorialScreen> {
     if (diferencia == 0) return 'Hoy';
     if (diferencia == 1) return 'Ayer';
 
-    const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+    const meses = [
+      'ene',
+      'feb',
+      'mar',
+      'abr',
+      'may',
+      'jun',
+      'jul',
+      'ago',
+      'sep',
+      'oct',
+      'nov',
+      'dic',
+    ];
     return '${fecha.day} de ${meses[fecha.month - 1]}';
   }
 
@@ -79,7 +100,14 @@ class _HistorialScreenState extends State<HistorialScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtrados = _items.where((i) => HistorialService.coincideFiltro(i, _filtro)).toList();
+    final consulta = _busquedaCtrl.text.trim().toLowerCase();
+    final filtrados = _items.where((i) {
+      final coincideTexto =
+          consulta.isEmpty ||
+          i.titulo.toLowerCase().contains(consulta) ||
+          i.subtitulo.toLowerCase().contains(consulta);
+      return coincideTexto && HistorialService.coincideFiltro(i, _filtro);
+    }).toList();
 
     // Agrupar por día conservando el orden (ya vienen ordenados desc)
     final grupos = <String, List<HistorialItem>>{};
@@ -96,46 +124,51 @@ class _HistorialScreenState extends State<HistorialScreen> {
           _barraFiltros(),
           Expanded(
             child: _cargando
-                ? Center(child: CircularProgressIndicator(color: AppColors.gold))
+                ? Center(
+                    child: CircularProgressIndicator(color: AppColors.gold),
+                  )
                 : _errorCarga != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(_errorCarga!, textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          OutlinedButton(
+                            onPressed: _cargar,
+                            child: const Text('Reintentar'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : filtrados.isEmpty
+                ? _estadoVacio()
+                : RefreshIndicator(
+                    color: AppColors.gold,
+                    onRefresh: _cargar,
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      children: grupos.entries.map((entrada) {
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 18),
                           child: Column(
-                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(_errorCarga!, textAlign: TextAlign.center),
-                              const SizedBox(height: 12),
-                              OutlinedButton(
-                                onPressed: _cargar,
-                                child: const Text('Reintentar'),
+                              Text(
+                                entrada.key.toUpperCase(),
+                                style: AppTypography.sectionLabel,
                               ),
+                              const SizedBox(height: 10),
+                              ...entrada.value.map(_tarjetaItem),
                             ],
                           ),
-                        ),
-                      )
-                : filtrados.isEmpty
-                    ? _estadoVacio()
-                    : RefreshIndicator(
-                        color: AppColors.gold,
-                        onRefresh: _cargar,
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                          children: grupos.entries.map((entrada) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 18),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(entrada.key.toUpperCase(), style: AppTypography.sectionLabel),
-                                  const SizedBox(height: 10),
-                                  ...entrada.value.map(_tarjetaItem),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -158,7 +191,9 @@ class _HistorialScreenState extends State<HistorialScreen> {
             fontWeight: FontWeight.w600,
             fontSize: 12.5,
           ),
-          side: BorderSide(color: activo ? AppColors.gold : AppColors.borderSoft),
+          side: BorderSide(
+            color: activo ? AppColors.gold : AppColors.borderSoft,
+          ),
         ),
       );
     }
@@ -168,6 +203,25 @@ class _HistorialScreenState extends State<HistorialScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          TextField(
+            controller: _busquedaCtrl,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              hintText: 'Buscar movimientos, tareas o metas',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _busquedaCtrl.text.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Limpiar búsqueda',
+                      onPressed: () {
+                        _busquedaCtrl.clear();
+                        setState(() {});
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 10),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -189,8 +243,14 @@ class _HistorialScreenState extends State<HistorialScreen> {
                 underline: const SizedBox(),
                 style: AppTypography.itemTitle,
                 items: const [
-                  DropdownMenuItem(value: _Periodo.dias7, child: Text('Últimos 7 días')),
-                  DropdownMenuItem(value: _Periodo.dias30, child: Text('Últimos 30 días')),
+                  DropdownMenuItem(
+                    value: _Periodo.dias7,
+                    child: Text('Últimos 7 días'),
+                  ),
+                  DropdownMenuItem(
+                    value: _Periodo.dias30,
+                    child: Text('Últimos 30 días'),
+                  ),
                   DropdownMenuItem(value: _Periodo.todo, child: Text('Todo')),
                 ],
                 onChanged: (v) {
@@ -215,7 +275,11 @@ class _HistorialScreenState extends State<HistorialScreen> {
           children: [
             const Text('🗂️', style: TextStyle(fontSize: 42)),
             const SizedBox(height: 12),
-            Text('No hay actividad en este periodo.', textAlign: TextAlign.center, style: AppTypography.secondary),
+            Text(
+              'No hay actividad en este periodo.',
+              textAlign: TextAlign.center,
+              style: AppTypography.secondary,
+            ),
           ],
         ),
       ),
@@ -224,7 +288,8 @@ class _HistorialScreenState extends State<HistorialScreen> {
 
   Widget _tarjetaItem(HistorialItem item) {
     final estilo = _estiloItem(item.tipo);
-    final hora = '${item.fecha.hour.toString().padLeft(2, '0')}:${item.fecha.minute.toString().padLeft(2, '0')}';
+    final hora =
+        '${item.fecha.hour.toString().padLeft(2, '0')}:${item.fecha.minute.toString().padLeft(2, '0')}';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -232,12 +297,16 @@ class _HistorialScreenState extends State<HistorialScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(AppRadii.xl2),
-        border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+        border: Border.all(
+          color: AppColors.borderSoft,
+          width: AppRadii.borderWidth,
+        ),
       ),
       child: Row(
         children: [
           Container(
-            width: 34, height: 34,
+            width: 34,
+            height: 34,
             decoration: BoxDecoration(
               color: estilo.color.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(AppRadii.xl),
@@ -250,14 +319,27 @@ class _HistorialScreenState extends State<HistorialScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item.titulo, style: AppTypography.itemTitle, overflow: TextOverflow.ellipsis),
+                Text(
+                  item.titulo,
+                  style: AppTypography.itemTitle,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 const SizedBox(height: 2),
-                Text(item.subtitulo,
-                    style: AppTypography.secondary.copyWith(fontSize: 11.5), overflow: TextOverflow.ellipsis),
+                Text(
+                  item.subtitulo,
+                  style: AppTypography.secondary.copyWith(fontSize: 11.5),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
           ),
-          Text(hora, style: AppTypography.secondary.copyWith(color: AppColors.textTertiary, fontSize: 11)),
+          Text(
+            hora,
+            style: AppTypography.secondary.copyWith(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+            ),
+          ),
         ],
       ),
     );

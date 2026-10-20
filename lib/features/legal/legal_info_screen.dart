@@ -80,8 +80,8 @@ class LegalInfoScreen extends StatelessWidget {
     _LegalSection(
       titleEs: '1. Información que registras',
       titleEn: '1. Information you provide',
-      bodyEs: 'Según las funciones que uses, MYD puede tratar datos de cuenta y perfil como correo, nombre, teléfono, ciudad, país y foto; tareas y fechas; y datos financieros que registres, como ingresos, gastos, categorías, presupuestos, metas de ahorro, aportes y movimientos recurrentes.',
-      bodyEn: 'Depending on the features you use, MYD may process account and profile data such as email, name, phone number, city, country, and profile photo; tasks and dates; and financial data you enter, such as income, expenses, categories, budgets, savings goals, contributions, and recurring transactions.',
+      bodyEs: 'Según las funciones que uses, MYD puede tratar datos de cuenta y perfil como correo, nombre, teléfono, ciudad, país y foto; tareas y fechas; y datos financieros que registres, como ingresos, gastos, categorías, presupuestos, metas de ahorro, aportes y movimientos recurrentes. Si activas la opción de ubicación al registrar un movimiento, guardamos sus coordenadas junto a ese ingreso o gasto. La ubicación se captura solo al usar la app y no se sigue en segundo plano.',
+      bodyEn: 'Depending on the features you use, MYD may process account and profile data such as email, name, phone number, city, country, and profile photo; tasks and dates; and financial data you enter, such as income, expenses, categories, budgets, savings goals, contributions, and recurring transactions. If you enable location while recording a transaction, we store its coordinates with that income or expense. Location is captured only while using the app and is not tracked in the background.',
     ),
     _LegalSection(
       titleEs: '2. Para qué se utiliza',
@@ -92,8 +92,8 @@ class LegalInfoScreen extends StatelessWidget {
     _LegalSection(
       titleEs: '3. Almacenamiento y proveedores',
       titleEn: '3. Storage and providers',
-      bodyEs: 'MYD utiliza Supabase para autenticación, base de datos y almacenamiento de la foto de perfil. Si eliges iniciar sesión con Google, la app utiliza la autenticación de Google para crear la sesión. Estos proveedores procesan información necesaria para prestar sus servicios, de acuerdo con sus propias condiciones y políticas.',
-      bodyEn: 'MYD uses Supabase for authentication, database, and profile-photo storage. If you choose Google sign-in, the app uses Google authentication to create your session. These providers process information needed to provide their services under their own terms and policies.',
+      bodyEs: 'MYD utiliza Supabase para autenticacion, base de datos y almacenamiento de fotos de perfil, recibos privados y coordenadas de movimientos cuya ubicacion activaste. El mapa solicita mosaicos de OpenStreetMap y el servicio de geocodificacion del dispositivo puede procesar coordenadas para mostrar una direccion aproximada. Google se utiliza si eliges iniciar sesion con Google.',
+      bodyEn: 'MYD uses Supabase for authentication, database, and storage of profile photos, private receipts, and transaction coordinates when you enable location. The map requests OpenStreetMap tiles, and the device geocoding service may process coordinates to display an approximate address. Google is used if you choose Google sign-in.',
     ),
     _LegalSection(
       titleEs: '4. Preferencias y datos locales',
@@ -124,6 +124,12 @@ class LegalInfoScreen extends StatelessWidget {
       titleEn: '8. Changes and questions',
       bodyEs: 'Esta información puede actualizarse si cambian las funciones o el tratamiento de datos. Para consultas o solicitudes relacionadas con tus datos, escribe a MYD en manage.your.day.oficial@gmail.com.',
       bodyEn: 'This information may be updated if features or data practices change. For questions or requests concerning your data, email MYD at manage.your.day.oficial@gmail.com.',
+    ),
+    _LegalSection(
+      titleEs: '9. Ubicación y recibos',
+      titleEn: '9. Location and receipts',
+      bodyEs: 'Los mapas usan datos de OpenStreetMap para dibujar la zona de una ubicación que ya guardaste. Al abrir el detalle, el dispositivo puede consultar su servicio de geocodificación para mostrar una dirección o un lugar cercano; el resultado es aproximado. Las fotos de recibos se guardan en un bucket privado de Supabase, separadas por usuario, y se eliminan al borrar la cuenta cuando el proceso termina correctamente.',
+      bodyEn: 'Maps use OpenStreetMap data to display an area for a location you have already saved. When you open a detail, the device may query its geocoding service to show an approximate address or nearby place. Receipt photos are stored in a private Supabase bucket scoped to each user and are removed during account deletion when the process completes successfully.',
     ),
   ];
 

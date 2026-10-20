@@ -45,15 +45,33 @@ Deno.serve(async (request: Request) => {
   const adminClient = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { error: avatarError } = await adminClient.storage
-    .from("avatars")
-    .remove([`${user.id}/avatar.jpg`]);
-  if (avatarError) {
-    console.error("Could not remove account avatar", avatarError.message);
-    return new Response("Could not remove account avatar", {
+  const { data: movements, error: movementError } = await adminClient
+    .from("movimientos")
+    .select("comprobante_path")
+    .eq("usuario_id", user.id)
+    .not("comprobante_path", "is", null);
+  if (movementError) {
+    console.error("Could not list account receipts", movementError.message);
+    return new Response("Could not remove account data", {
       status: 500,
       headers: corsHeaders,
     });
+  }
+
+  const receiptPaths = (movements ?? [])
+    .map((movement) => movement.comprobante_path as string)
+    .filter(Boolean);
+  for (let start = 0; start < receiptPaths.length; start += 100) {
+    const { error: receiptError } = await adminClient.storage
+      .from("receipts")
+      .remove(receiptPaths.slice(start, start + 100));
+    if (receiptError) {
+      console.error("Could not remove account receipts", receiptError.message);
+      return new Response("Could not remove account data", {
+        status: 500,
+        headers: corsHeaders,
+      });
+    }
   }
 
   const { error: dataError } = await adminClient.rpc("delete_user_data", {
@@ -62,6 +80,17 @@ Deno.serve(async (request: Request) => {
   if (dataError) {
     console.error("Could not remove account data", dataError.message);
     return new Response("Could not remove account data", {
+      status: 500,
+      headers: corsHeaders,
+    });
+  }
+
+  const { error: avatarError } = await adminClient.storage
+    .from("avatars")
+    .remove([`${user.id}/avatar.jpg`]);
+  if (avatarError) {
+    console.error("Could not remove account avatar", avatarError.message);
+    return new Response("Could not remove account avatar", {
       status: 500,
       headers: corsHeaders,
     });

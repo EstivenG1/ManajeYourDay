@@ -5,8 +5,10 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   app_links
   file_selector_windows
+  geolocator_windows
   printing
   share_plus
+  speech_to_text_windows
   url_launcher_windows
 )
 
