@@ -36,8 +36,7 @@ mejor sus hábitos de gasto y productividad.
 - Crear metas de ahorro, registrar aportes y consultar su progreso e historial.
 - Definir un aporte y una frecuencia para recibir recordatorios.
 - Recibir avisos al alcanzar hitos del 25%, 50%, 75% y 100%.
-- Consultar reportes de hoy y semana; el reporte mensual depende del plan
-  asignado en Supabase.
+- Consultar reportes diarios, semanales y mensuales gratis.
 - Consultar gráficos, presupuestos, metas y conclusiones calculadas localmente.
 - Exportar movimientos y tareas de un rango de fechas a CSV, Excel (.xlsx) o PDF.
   Excel y PDF incluyen el logo y una presentación con la paleta dorada de MYD.
@@ -51,10 +50,10 @@ mejor sus hábitos de gasto y productividad.
   del texto y activar/desactivar notificaciones.
 - Consultar historial y solicitar la eliminación definitiva de la cuenta.
 
-La moneda elegida cambia el formato del importe, **no convierte valores ni
-consulta tasas de cambio**. La selección de idioma localiza los controles del
-sistema y algunas pantallas principales; todavía quedan textos específicos en
-español.
+MYD es gratuita y no procesa suscripciones. La moneda elegida cambia el formato
+del importe, **no convierte valores ni consulta tasas de cambio**. La selección
+de idioma localiza los controles del sistema y las pantallas principales; aún
+pueden quedar textos secundarios sin traducir.
 
 Las recomendaciones del inicio son reglas locales basadas en registros y
 tendencias. No se envían datos a un modelo de IA generativa.
@@ -62,8 +61,8 @@ tendencias. No se envían datos a un modelo de IA generativa.
 ## Requisitos y ejecución
 
 - Flutter/Dart compatible con la versión de SDK indicada en `pubspec.yaml`.
-- Proyecto Supabase configurado para autenticación, base de datos y el bucket
-  `avatars`.
+- Proyecto Supabase configurado para autenticación, base de datos y los buckets
+  privados `avatars` y `receipts`.
 - Permisos de ubicación “mientras se usa” para capturar coordenadas a petición.
 
 ```powershell
@@ -73,9 +72,9 @@ flutter run
 
 ## Supabase y migraciones
 
-El proyecto enlazado ya tiene aplicadas las migraciones de recurrencias, avatares privados y ubicaciones. Para una copia nueva, revisa las migraciones de `supabase/migrations` y aplícalas en orden con `supabase db push` tras ejecutar `supabase login` y `supabase link`.
+El proyecto enlazado tiene aplicadas las migraciones de recurrencias, avatares y recibos privados, ubicaciones y limpieza de cuenta. Para una copia nueva, revisa las migraciones de `supabase/migrations` y aplícalas en orden con `supabase db push` tras ejecutar `supabase login` y `supabase link`.
 
-La migración nueva `20261019000100_private_transaction_receipts.sql` crea la columna y el bucket privado para fotos de recibos. Aplícala antes de usar esa función. Después, despliega `supabase/functions/delete-account` para que la eliminación de cuenta también elimine los recibos privados.
+La migración `20261019000100_private_transaction_receipts.sql` crea la columna y el bucket privado para fotos de recibos. La migración `20261022000100_tighten_storage_and_account_cleanup.sql` elimina políticas heredadas de avatares y amplía la limpieza de cuenta. Despliega `supabase/functions/delete-account` para que el borrado elimine archivos y datos de usuario.
 
 El dictado solo intenta reconocimiento en el dispositivo. Si el sistema no tiene el modelo de voz disponible, MYD no envía el audio a un servicio remoto como alternativa.
 ## Protección de fotos de perfil
@@ -92,7 +91,6 @@ existan políticas permisivas anteriores.
 
 - Integración bancaria, pagos automáticos o ahorros compartidos.
 - Conversión automática entre monedas.
-- Pasarela para comprar o cambiar planes Premium.
 - Copias de seguridad descargables automáticas; la exportación CSV/Excel/PDF es
   iniciada por el usuario.
 

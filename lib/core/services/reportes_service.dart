@@ -76,7 +76,10 @@ class ReportesService {
 
   static DateTime _primerDiaDelMes(DateTime d) => DateTime(d.year, d.month, 1);
 
-  static Future<ReporteData> cargar(PeriodoReporte periodo) async {
+  static Future<ReporteData> cargar(
+    PeriodoReporte periodo, {
+    bool english = false,
+  }) async {
     final userId = supabase.auth.currentUser!.id;
     final hoy = DateTime.now();
 
@@ -340,20 +343,34 @@ class ReportesService {
     if (categoriasOrdenadas.isNotEmpty) {
       final top = categoriasOrdenadas.first;
       final pct = gasActual == 0 ? 0 : (top.value / gasActual) * 100;
-      conclusiones.add('💸 "${top.key}" es tu categoría con más gasto: ${pct.toStringAsFixed(0)}% del total.');
+      conclusiones.add(
+        english
+            ? '💸 "${top.key}" is your highest spending category at ${pct.toStringAsFixed(0)}% of expenses.'
+            : '💸 "${top.key}" es tu categoría con más gasto: ${pct.toStringAsFixed(0)}% del total.',
+      );
     }
     final varGastos = gasAnterior == 0 ? null : ((gasActual - gasAnterior) / gasAnterior) * 100;
     if (varGastos != null) {
       final subio = varGastos >= 0;
       conclusiones.add(
-        '${subio ? '⚠️' : '✅'} Gastaste ${varGastos.abs().toStringAsFixed(0)}% ${subio ? 'más' : 'menos'} que el periodo anterior.',
+        english
+            ? '${subio ? '⚠️' : '✅'} You spent ${varGastos.abs().toStringAsFixed(0)}% ${subio ? 'more' : 'less'} than in the previous period.'
+            : '${subio ? '⚠️' : '✅'} Gastaste ${varGastos.abs().toStringAsFixed(0)}% ${subio ? 'más' : 'menos'} que el periodo anterior.',
       );
     }
     if (tareasVencidas > 0) {
-      conclusiones.add('⏰ Tienes $tareasVencidas tarea(s) vencida(s) sin completar.');
+      conclusiones.add(
+        english
+            ? '⏰ You have $tareasVencidas overdue task(s) left incomplete.'
+            : '⏰ Tienes $tareasVencidas tarea(s) vencida(s) sin completar.',
+      );
     }
     if (conclusiones.isEmpty) {
-      conclusiones.add('📊 Sigue registrando datos para ver conclusiones más precisas.');
+      conclusiones.add(
+        english
+            ? '📊 Keep adding data to get more useful insights.'
+            : '📊 Sigue registrando datos para ver conclusiones más precisas.',
+      );
     }
 
     return ReporteData(

@@ -23,8 +23,8 @@ class LegalInfoScreen extends StatelessWidget {
     _LegalSection(
       titleEs: '2. Qué ofrece MYD',
       titleEn: '2. What MYD provides',
-      bodyEs: 'MYD ofrece herramientas para organizar tareas y registrar movimientos, presupuestos y metas de ahorro, además de resúmenes, reportes y recordatorios. Las funciones disponibles pueden variar según la versión y el plan de tu cuenta. Actualmente la app no procesa pagos ni cambios de suscripción.',
-      bodyEn: 'MYD provides tools to organize tasks and record transactions, budgets, and savings goals, as well as summaries, reports, and reminders. Available features may vary by app version and account plan. The app currently does not process payments or subscription changes.',
+      bodyEs: 'MYD ofrece herramientas gratuitas para organizar tareas y registrar movimientos, presupuestos y metas de ahorro, además de resúmenes, reportes y recordatorios. Las funciones disponibles pueden variar según la versión de la app. MYD no procesa pagos ni suscripciones.',
+      bodyEn: 'MYD provides free tools to organize tasks and record transactions, budgets, and savings goals, as well as summaries, reports, and reminders. Available features may vary by app version. MYD does not process payments or subscriptions.',
     ),
     _LegalSection(
       titleEs: '3. Tu cuenta',

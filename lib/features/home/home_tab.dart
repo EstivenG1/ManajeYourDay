@@ -292,7 +292,7 @@ class _HomeTabState extends State<HomeTab> {
                 child: OutlinedButton.icon(
                   onPressed: widget.onVerFinanzas,
                   icon: const Icon(Icons.add_card_rounded),
-                  label: const Text('Registrar movimiento'),
+                  label: Text(appText(context, 'Registrar movimiento', 'Add transaction')),
                 ),
               ),
               const SizedBox(width: 10),
@@ -300,7 +300,7 @@ class _HomeTabState extends State<HomeTab> {
                 child: OutlinedButton.icon(
                   onPressed: widget.onVerTareas,
                   icon: const Icon(Icons.add_task_rounded),
-                  label: const Text('Nueva tarea'),
+                  label: Text(appText(context, 'Nueva tarea', 'New task')),
                 ),
               ),
             ],
@@ -324,7 +324,7 @@ class _HomeTabState extends State<HomeTab> {
             children: [
               Expanded(
                 child: _chipResumen(
-                  titulo: 'Productividad',
+                  titulo: appText(context, 'Productividad', 'Productivity'),
                   valor: '${productividad.toStringAsFixed(0)}%',
                   color: AppColors.goldDeep,
                   fondo: AppColors.goldSoftBg,
@@ -334,7 +334,7 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(width: 10),
               Expanded(
                 child: _chipResumen(
-                  titulo: 'Balance',
+                  titulo: appText(context, 'Balance', 'Balance'),
                   valor: formatearMonto(balanceMes),
                   color: balanceMes >= 0 ? AppColors.green : AppColors.red,
                   fondo: balanceMes >= 0
@@ -416,7 +416,11 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Todo está tranquilo por ahora. Toca Tareas para crear tu próxima prioridad.',
+              appText(
+                context,
+                'Todo está tranquilo por ahora. Toca Tareas para crear tu próxima prioridad.',
+                'You are all caught up. Open Tasks to set your next priority.',
+              ),
               style: AppTypography.secondary,
             ),
           ),
@@ -441,7 +445,7 @@ class _HomeTabState extends State<HomeTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'BALANCE TOTAL DEL MES',
+            appText(context, 'BALANCE TOTAL DEL MES', 'TOTAL BALANCE THIS MONTH'),
             style: AppTypography.sectionLabel.copyWith(
               color: Colors.white70,
               fontSize: 12,
@@ -457,9 +461,9 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 14),
           Row(
             children: [
-              _datoBalance('Ingresos', '+${formatearMonto(_ingresosMes)}'),
-              _datoBalance('Gastos', '-${formatearMonto(_gastosMes)}'),
-              _datoBalance('Mov.', '$_totalMovimientos'),
+              _datoBalance(appText(context, 'Ingresos', 'Income'), '+${formatearMonto(_ingresosMes)}'),
+              _datoBalance(appText(context, 'Gastos', 'Expenses'), '-${formatearMonto(_gastosMes)}'),
+              _datoBalance(appText(context, 'Mov.', 'Items'), '$_totalMovimientos'),
             ],
           ),
         ],
@@ -486,14 +490,14 @@ class _HomeTabState extends State<HomeTab> {
               children: [
                 Text(
                   _totalMovimientos == 0
-                      ? 'Proyección mensual'
-                      : 'Proyección al cierre del mes',
+                      ? appText(context, 'Proyección mensual', 'Monthly forecast')
+                      : appText(context, 'Proyección al cierre del mes', 'Forecast at month end'),
                   style: AppTypography.itemTitle,
                 ),
                 Text(
                   _totalMovimientos == 0
-                      ? 'Registra actividad para estimarla'
-                      : 'Si mantienes el ritmo de gasto actual',
+                      ? appText(context, 'Registra actividad para estimarla', 'Add transactions to see an estimate')
+                      : appText(context, 'Si mantienes el ritmo de gasto actual', 'If you keep spending at this pace'),
                   style: AppTypography.secondary.copyWith(fontSize: 11),
                 ),
               ],
@@ -536,10 +540,14 @@ class _HomeTabState extends State<HomeTab> {
   Widget _resumenMetasCard() {
     final metaMasCercana = _resumenMetas.metasActivas > 0
         ? '${_resumenMetas.nombreMetaMasCercana} • ${_resumenMetas.porcentajeMetaMasCercana.toStringAsFixed(0)}%'
-        : 'Sin metas activas';
+        : appText(context, 'Sin metas activas', 'No active goals');
     final descripcionMetas = _metasActivas.isNotEmpty
-        ? '${_metasActivas.length} metas activas'
-        : 'Aún no tienes metas';
+        ? appText(
+            context,
+            '${_metasActivas.length} metas activas',
+            '${_metasActivas.length} active goals',
+          )
+        : appText(context, 'Aún no tienes metas', 'You have no goals yet');
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -554,13 +562,13 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('AVANCE DE METAS', style: AppTypography.sectionLabel),
+          Text(appText(context, 'AVANCE DE METAS', 'GOAL PROGRESS'), style: AppTypography.sectionLabel),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: _miniKpiResumen(
-                  titulo: 'Progreso',
+                  titulo: appText(context, 'Progreso', 'Progress'),
                   valor:
                       '${_resumenMetas.porcentajeGeneral.toStringAsFixed(0)}%',
                   subtitulo: descripcionMetas,
@@ -570,10 +578,10 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(width: 10),
               Expanded(
                 child: _miniKpiResumen(
-                  titulo: 'Ahorro',
+                  titulo: appText(context, 'Ahorro', 'Savings'),
                   valor: formatearMonto(_resumenMetas.totalActual),
                   subtitulo:
-                      'de ${formatearMonto(_resumenMetas.totalObjetivo)}',
+                      '${appText(context, 'de', 'of')} ${formatearMonto(_resumenMetas.totalObjetivo)}',
                   color: AppColors.goldDeep,
                 ),
               ),
@@ -581,7 +589,7 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Más cerca: $metaMasCercana',
+            appText(context, 'Más cerca: $metaMasCercana', 'Closest goal: $metaMasCercana'),
             style: AppTypography.secondary.copyWith(fontSize: 12),
           ),
         ],
@@ -608,36 +616,36 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('RESUMEN DE LA SEMANA', style: AppTypography.sectionLabel),
+          Text(appText(context, 'RESUMEN DE LA SEMANA', 'WEEKLY SUMMARY'), style: AppTypography.sectionLabel),
           const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: _miniKpiResumen(
-                  titulo: 'Tareas',
+                  titulo: appText(context, 'Tareas', 'Tasks'),
                   valor:
                       '${_resumenSemana.tareasCompletadas}/${_resumenSemana.tareasTotales}',
                   subtitulo: _resumenSemana.tareasTotales > 0
-                      ? '${porcentaje.toStringAsFixed(0)}% hechas'
-                      : 'Sin tareas programadas',
+                      ? appText(context, '${porcentaje.toStringAsFixed(0)}% hechas', '${porcentaje.toStringAsFixed(0)}% done')
+                      : appText(context, 'Sin tareas programadas', 'No scheduled tasks'),
                   color: AppColors.goldDeep,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _miniKpiResumen(
-                  titulo: 'Gastos',
+                  titulo: appText(context, 'Gastos', 'Expenses'),
                   valor: formatearMonto(_resumenSemana.gastos),
-                  subtitulo: 'Esta semana',
+                  subtitulo: appText(context, 'Esta semana', 'This week'),
                   color: AppColors.red,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _miniKpiResumen(
-                  titulo: 'Balance',
+                  titulo: appText(context, 'Balance', 'Balance'),
                   valor: formatearMonto(_resumenSemana.balance),
-                  subtitulo: 'Semana actual',
+                  subtitulo: appText(context, 'Semana actual', 'Current week'),
                   color: _resumenSemana.balance >= 0
                       ? AppColors.green
                       : AppColors.red,
@@ -701,10 +709,10 @@ class _HomeTabState extends State<HomeTab> {
         ? AppColors.amber
         : AppColors.green;
     final texto = porcentaje >= 90
-        ? 'Estás muy cerca del límite de tus presupuestos.'
+        ? appText(context, 'Estás muy cerca del límite de tus presupuestos.', 'You are close to your budget limits.')
         : porcentaje >= 75
-        ? 'Tu gasto acumulado ya está alto para esta semana.'
-        : 'Tu presupuesto va por buen camino esta semana.';
+        ? appText(context, 'Tu gasto acumulado ya está alto para esta semana.', 'Your spending is already high this week.')
+        : appText(context, 'Tu presupuesto va por buen camino esta semana.', 'Your budget is on track this week.');
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -726,8 +734,8 @@ class _HomeTabState extends State<HomeTab> {
               children: [
                 Text(
                   _alertasPresupuesto.isNotEmpty
-                      ? 'Límites por categoría cerca del tope'
-                      : 'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado',
+                      ? appText(context, 'Límites por categoría cerca del tope', 'Category budgets nearing their limits')
+                      : appText(context, 'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado', 'Active budget: ${porcentaje.toStringAsFixed(0)}% used'),
                   style: AppTypography.itemTitle.copyWith(color: color),
                 ),
                 const SizedBox(height: 4),
@@ -776,7 +784,7 @@ class _HomeTabState extends State<HomeTab> {
             children: [
               Expanded(
                 child: Text(
-                  'TAREAS PENDIENTES',
+                  appText(context, 'TAREAS PENDIENTES', 'PENDING TASKS'),
                   style: AppTypography.sectionLabel,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -786,7 +794,7 @@ class _HomeTabState extends State<HomeTab> {
               GestureDetector(
                 onTap: widget.onVerTareas,
                 child: Text(
-                  'Ver todas →',
+                  appText(context, 'Ver todas →', 'View all →'),
                   style: AppTypography.secondary.copyWith(
                     color: AppColors.gold,
                     fontWeight: FontWeight.w700,
@@ -803,7 +811,7 @@ class _HomeTabState extends State<HomeTab> {
                 : null;
             final hora = fechaLimite != null
                 ? '${fechaLimite.hour.toString().padLeft(2, '0')}:${fechaLimite.minute.toString().padLeft(2, '0')}'
-                : 'Sin hora';
+                : appText(context, 'Sin hora', 'No time set');
             final color =
                 coloresPrioridad[t['prioridad']] ?? AppColors.textTertiary;
             return Padding(

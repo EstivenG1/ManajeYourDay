@@ -39,7 +39,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   String? _avatarUrl;
   String? _correo;
-  String? _nombrePlan;
   String? _errorCarga;
   double _escalaTexto = 1;
 
@@ -65,7 +64,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
       final data = await supabase
           .from('perfiles')
-          .select('*, planes(nombre)')
+          .select()
           .eq('id', userId)
           .maybeSingle();
 
@@ -101,7 +100,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
                 .createSignedUrl('$userId/avatar.jpg', 3600);
       _correo = data?['correo'] as String? ?? user.email;
 
-      _nombrePlan = data?['planes']?['nombre'] as String? ?? 'Basico';
       _escalaTexto = AppSettings.instance.textScale;
       await AppSettings.instance.setRegionalPreferences(
         currency: _moneda,
@@ -402,16 +400,11 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
                     const SizedBox(height: 6),
 
-                    Center(child: _badgePlan()),
-
-                    const SizedBox(height: 8),
                     Text(
                       appText(
                         context,
-                        'Los planes y funciones Premium se asignan desde el servicio MYD. '
-                            'La app todavía no procesa pagos ni cambios de suscripción.',
-                        'Plans and Premium features are managed by the MYD service. '
-                            'The app does not process payments or subscription changes yet.',
+                        'MYD es gratuita. Todas las funciones disponibles están incluidas.',
+                        'MYD is free. All available features are included.',
                       ),
                       textAlign: TextAlign.center,
                       style: AppTypography.secondary,
@@ -547,10 +540,26 @@ class _PerfilScreenState extends State<PerfilScreen> {
                         await AppSettings.instance.setNotificationsEnabled(
                           value,
                         );
-                        if (value) {
-                          await NotificationService.solicitarPermisos();
-                        } else {
-                          await NotificationService.cancelarTodas();
+                        try {
+                          if (value) {
+                            await NotificationService.solicitarPermisos();
+                            await NotificationService.restaurarRecordatorios();
+                          } else {
+                            await NotificationService.cancelarTodas();
+                          }
+                        } catch (_) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                appText(
+                                  context,
+                                  'No se pudieron actualizar los recordatorios. Inténtalo de nuevo.',
+                                  'Could not update reminders. Please try again.',
+                                ),
+                              ),
+                            ),
+                          );
                         }
                       },
                     ),
@@ -699,29 +708,6 @@ class _PerfilScreenState extends State<PerfilScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // PLAN
-  // ============================================================
-
-  Widget _badgePlan() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.goldChipBg,
-        borderRadius: BorderRadius.circular(AppRadii.full),
-        border: Border.all(color: AppColors.goldBorder),
-      ),
-      child: Text(
-        'Plan ${_nombrePlan ?? "Básico"}',
-        style: TextStyle(
-          color: AppColors.goldDeep,
-          fontWeight: FontWeight.w700,
-          fontSize: 12,
-        ),
       ),
     );
   }

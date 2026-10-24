@@ -74,23 +74,26 @@ Deno.serve(async (request: Request) => {
     }
   }
 
-  const { error: dataError } = await adminClient.rpc("delete_user_data", {
-    target_user_id: user.id,
-  });
-  if (dataError) {
-    console.error("Could not remove account data", dataError.message);
+  // Remove storage objects before their database references so a storage error
+  // does not delete the user's database rows. Storage cleanup itself can be
+  // partially applied by the provider and is safe to retry.
+  const { error: avatarError } = await adminClient.storage
+    .from("avatars")
+    .remove([`${user.id}/avatar.jpg`]);
+  if (avatarError) {
+    console.error("Could not remove account avatar", avatarError.message);
     return new Response("Could not remove account data", {
       status: 500,
       headers: corsHeaders,
     });
   }
 
-  const { error: avatarError } = await adminClient.storage
-    .from("avatars")
-    .remove([`${user.id}/avatar.jpg`]);
-  if (avatarError) {
-    console.error("Could not remove account avatar", avatarError.message);
-    return new Response("Could not remove account avatar", {
+  const { error: dataError } = await adminClient.rpc("delete_user_data", {
+    target_user_id: user.id,
+  });
+  if (dataError) {
+    console.error("Could not remove account data", dataError.message);
+    return new Response("Could not remove account data", {
       status: 500,
       headers: corsHeaders,
     });

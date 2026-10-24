@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
-import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
 import '../../core/services/reportes_service.dart';
 import 'exportar_datos_screen.dart';
@@ -19,35 +18,21 @@ class _ReportesScreenState extends State<ReportesScreen> {
   PeriodoReporte _periodo = PeriodoReporte.semana;
   ReporteData? _datos;
   bool _cargando = true;
-  bool _esPremium = false;
   String? _errorCarga;
 
   @override
   void initState() {
     super.initState();
-    _cargarPlanYDatos();
-  }
-
-  Future<void> _cargarPlanYDatos() async {
-    try {
-      final userId = supabase.auth.currentUser!.id;
-      final perfil = await supabase
-          .from('perfiles')
-          .select('planes(nombre)')
-          .eq('id', userId)
-          .single();
-      final nombrePlan = perfil['planes']?['nombre'] ?? 'Basico';
-      _esPremium = nombrePlan != 'Basico';
-    } catch (_) {
-      _esPremium = false;
-    }
-    await _cargar();
+    _cargar();
   }
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
     try {
-      final datos = await ReportesService.cargar(_periodo);
+      final datos = await ReportesService.cargar(
+        _periodo,
+        english: Localizations.localeOf(context).languageCode == 'en',
+      );
       if (mounted) {
         setState(() {
           _datos = datos;
@@ -57,7 +42,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
     } catch (error) {
       if (mounted) {
         setState(
-          () => _errorCarga = 'No se pudo actualizar el reporte: $error',
+          () => _errorCarga = appText(
+            context,
+            'No se pudo actualizar el reporte: $error',
+            'Could not update the report: $error',
+          ),
         );
       }
     } finally {
@@ -66,14 +55,6 @@ class _ReportesScreenState extends State<ReportesScreen> {
   }
 
   void _cambiarPeriodo(PeriodoReporte p) {
-    if (p == PeriodoReporte.mes && !_esPremium) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('El reporte mensual es una función Premium ✨'),
-        ),
-      );
-      return;
-    }
     setState(() => _periodo = p);
     _cargar();
   }
@@ -118,7 +99,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
                       Expanded(child: Text(_errorCarga!)),
                       TextButton(
                         onPressed: _cargar,
-                        child: const Text('Reintentar'),
+                        child: Text(appText(context, 'Reintentar', 'Retry')),
                       ),
                     ],
                   ),
@@ -137,7 +118,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
                           Text(_errorCarga!, textAlign: TextAlign.center),
                           TextButton(
                             onPressed: _cargar,
-                            child: const Text('Reintentar'),
+                            child: Text(appText(context, 'Reintentar', 'Retry')),
                           ),
                         ],
                       ),
@@ -173,16 +154,16 @@ class _ReportesScreenState extends State<ReportesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('COMPARATIVO', style: AppTypography.sectionLabel),
+          Text(appText(context, 'COMPARATIVO', 'COMPARISON'), style: AppTypography.sectionLabel),
           const SizedBox(height: 10),
           Row(
             children: [
               Expanded(
                 child: _chipComparativo(
-                  titulo: 'Ingresos',
+                  titulo: appText(context, 'Ingresos', 'Income'),
                   valor: tieneIngreso
                       ? '${variacionIngresos.toStringAsFixed(0)}%'
-                      : 'Sin dato',
+                      : appText(context, 'Sin dato', 'No data'),
                   color: variacionIngresos != null && variacionIngresos >= 0
                       ? AppColors.green
                       : AppColors.textTertiary,
@@ -191,10 +172,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: _chipComparativo(
-                  titulo: 'Gastos',
+                  titulo: appText(context, 'Gastos', 'Expenses'),
                   valor: tieneGasto
                       ? '${variacionGastos.toStringAsFixed(0)}%'
-                      : 'Sin dato',
+                      : appText(context, 'Sin dato', 'No data'),
                   color: variacionGastos != null && variacionGastos <= 0
                       ? AppColors.green
                       : AppColors.red,
@@ -238,7 +219,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
 
   // ---------- Selector de periodo ----------
   Widget _selectorPeriodo() {
-    Widget boton(String texto, PeriodoReporte valor, {bool premium = false}) {
+    Widget boton(String texto, PeriodoReporte valor) {
       final activo = _periodo == valor;
       return Expanded(
         child: GestureDetector(
@@ -263,14 +244,6 @@ class _ReportesScreenState extends State<ReportesScreen> {
                     fontSize: 13,
                   ),
                 ),
-                if (premium && !_esPremium)
-                  Text(
-                    '🔒 Premium',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: AppColors.textTertiary,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -285,7 +258,6 @@ class _ReportesScreenState extends State<ReportesScreen> {
         boton(
           appText(context, 'Mes', 'Month'),
           PeriodoReporte.mes,
-          premium: true,
         ),
       ],
     );
@@ -298,7 +270,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
         children: [
           Expanded(
             child: _kpi(
-              'Ingresos hoy',
+              appText(context, 'Ingresos hoy', 'Income today'),
               formatearMonto(d.ingresos),
               AppColors.green,
               tema.kpiIngresoBg,
@@ -308,7 +280,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: _kpi(
-              'Gastos hoy',
+              appText(context, 'Gastos hoy', 'Expenses today'),
               formatearMonto(d.gastos),
               AppColors.red,
               tema.kpiGastoBg,
@@ -318,12 +290,12 @@ class _ReportesScreenState extends State<ReportesScreen> {
         ],
       ),
       const SizedBox(height: 20),
-      Text('MOVIMIENTOS DE HOY', style: AppTypography.sectionLabel),
+      Text(appText(context, 'MOVIMIENTOS DE HOY', 'TODAY’S TRANSACTIONS'), style: AppTypography.sectionLabel),
       const SizedBox(height: 10),
       if (d.movimientosDeHoy.isEmpty)
         _tarjeta(
           child: Text(
-            'Aún no registras movimientos hoy.',
+            appText(context, 'Aún no registras movimientos hoy.', 'You have no transactions today yet.'),
             style: AppTypography.secondary,
           ),
         )
@@ -362,12 +334,12 @@ class _ReportesScreenState extends State<ReportesScreen> {
           ),
         ),
       const SizedBox(height: 20),
-      Text('TAREAS DE HOY', style: AppTypography.sectionLabel),
+      Text(appText(context, 'TAREAS DE HOY', 'TODAY’S TASKS'), style: AppTypography.sectionLabel),
       const SizedBox(height: 10),
       if (d.tareasDeHoy.isEmpty)
         _tarjeta(
           child: Text(
-            'No tienes tareas programadas para hoy.',
+            appText(context, 'No tienes tareas programadas para hoy.', 'You have no tasks scheduled for today.'),
             style: AppTypography.secondary,
           ),
         )
@@ -411,25 +383,25 @@ class _ReportesScreenState extends State<ReportesScreen> {
       _filaKpisSecundarios(d),
       const SizedBox(height: 24),
 
-      Text('INGRESOS VS GASTOS', style: AppTypography.sectionLabel),
+      Text(appText(context, 'INGRESOS VS GASTOS', 'INCOME VS EXPENSES'), style: AppTypography.sectionLabel),
       const SizedBox(height: 12),
       _tarjeta(child: _graficaBarras(d)),
       const SizedBox(height: 24),
 
-      Text('TENDENCIA DEL BALANCE', style: AppTypography.sectionLabel),
+      Text(appText(context, 'TENDENCIA DEL BALANCE', 'BALANCE TREND'), style: AppTypography.sectionLabel),
       const SizedBox(height: 12),
       _tarjeta(child: _graficaLinea(d)),
       const SizedBox(height: 24),
 
       if (d.gastosPorCategoria.isNotEmpty) ...[
-        Text('GASTOS POR CATEGORÍA', style: AppTypography.sectionLabel),
+        Text(appText(context, 'GASTOS POR CATEGORÍA', 'EXPENSES BY CATEGORY'), style: AppTypography.sectionLabel),
         const SizedBox(height: 12),
         _tarjeta(child: _graficaDona(d, tema)),
         const SizedBox(height: 24),
       ],
 
       Text(
-        'CUMPLIMIENTO DE TAREAS POR PRIORIDAD',
+        appText(context, 'CUMPLIMIENTO DE TAREAS POR PRIORIDAD', 'TASK COMPLETION BY PRIORITY'),
         style: AppTypography.sectionLabel,
       ),
       const SizedBox(height: 12),
@@ -437,14 +409,14 @@ class _ReportesScreenState extends State<ReportesScreen> {
       const SizedBox(height: 24),
 
       if (_periodo == PeriodoReporte.mes) ...[
-        Text('MAPA DE CALOR DE ACTIVIDAD', style: AppTypography.sectionLabel),
+        Text(appText(context, 'MAPA DE CALOR DE ACTIVIDAD', 'ACTIVITY HEATMAP'), style: AppTypography.sectionLabel),
         const SizedBox(height: 12),
         _tarjeta(child: _mapaCalor(d)),
         const SizedBox(height: 24),
       ],
 
       if (d.presupuestos.isNotEmpty) ...[
-        Text('PRESUPUESTOS', style: AppTypography.sectionLabel),
+        Text(appText(context, 'PRESUPUESTOS', 'BUDGETS'), style: AppTypography.sectionLabel),
         const SizedBox(height: 12),
         _tarjeta(
           child: Column(
@@ -465,7 +437,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
       ],
 
       if (d.metas.isNotEmpty) ...[
-        Text('METAS DE AHORRO', style: AppTypography.sectionLabel),
+        Text(appText(context, 'METAS DE AHORRO', 'SAVINGS GOALS'), style: AppTypography.sectionLabel),
         const SizedBox(height: 12),
         _tarjeta(
           child: Column(
@@ -486,7 +458,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
         const SizedBox(height: 24),
       ],
 
-      Text('CONCLUSIONES', style: AppTypography.sectionLabel),
+      Text(appText(context, 'CONCLUSIONES', 'INSIGHTS'), style: AppTypography.sectionLabel),
       const SizedBox(height: 12),
       _tarjeta(
         color: AppColors.goldSoftBg,
@@ -531,7 +503,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
       children: [
         Expanded(
           child: _kpi(
-            'Productividad',
+            appText(context, 'Productividad', 'Productivity'),
             '${d.productividad.toStringAsFixed(0)}%',
             AppColors.goldDeep,
             AppColors.goldChipBg,
@@ -541,7 +513,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
         const SizedBox(width: 10),
         Expanded(
           child: _kpi(
-            'Balance neto',
+            appText(context, 'Balance neto', 'Net balance'),
             formatearMonto(d.ingresos - d.gastos),
             AppColors.green,
             tema.kpiIngresoBg,
@@ -557,14 +529,14 @@ class _ReportesScreenState extends State<ReportesScreen> {
       children: [
         Expanded(
           child: _kpiChico(
-            'Gasto prom./día',
+            appText(context, 'Gasto prom./día', 'Avg. daily spending'),
             formatearMonto(d.gastoPromedioDiario),
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(child: _kpiChico('Top gasto', d.categoriaTop ?? '—')),
+        Expanded(child: _kpiChico(appText(context, 'Mayor gasto', 'Top expense'), d.categoriaTop ?? '—')),
         const SizedBox(width: 8),
-        Expanded(child: _kpiChico('Vencidas', '${d.tareasVencidas}')),
+        Expanded(child: _kpiChico(appText(context, 'Vencidas', 'Overdue'), '${d.tareasVencidas}')),
       ],
     );
   }
@@ -617,7 +589,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _graficaBarras(ReporteData d) {
     if (d.etiquetasSerie.isEmpty) {
       return Text(
-        'Sin datos suficientes para graficar.',
+        appText(context, 'Sin datos suficientes para graficar.', 'Not enough data to build this chart.'),
         style: AppTypography.secondary,
       );
     }
@@ -687,7 +659,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _graficaLinea(ReporteData d) {
     if (d.balanceAcumulado.isEmpty) {
       return Text(
-        'Sin datos suficientes para graficar.',
+        appText(context, 'Sin datos suficientes para graficar.', 'Not enough data to build this chart.'),
         style: AppTypography.secondary,
       );
     }
@@ -815,7 +787,19 @@ class _ReportesScreenState extends State<ReportesScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    p.toUpperCase(),
+                    appText(
+                      context,
+                      switch (p) {
+                        'alta' => 'ALTA',
+                        'media' => 'MEDIA',
+                        _ => 'BAJA',
+                      },
+                      switch (p) {
+                        'alta' => 'HIGH',
+                        'media' => 'MEDIUM',
+                        _ => 'LOW',
+                      },
+                    ),
                     style: AppTypography.secondary.copyWith(
                       color: coloresPrioridad[p],
                     ),
@@ -935,7 +919,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '⚠️ Superaste el límite de este presupuesto',
+                appText(context, '⚠️ Superaste el límite de este presupuesto', '⚠️ You exceeded this budget limit'),
                 style: TextStyle(color: colorAlerta, fontSize: 11),
               ),
             ),

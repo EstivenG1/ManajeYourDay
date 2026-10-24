@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../supabase/supabase_config.dart';
+import '../services/notification_service.dart';
 import '../../features/auth/password_recovery_screen.dart';
 import '../../features/splash/welcome_screen.dart';
 import '../../features/splash/new_user_welcome_screen.dart';
@@ -57,7 +58,26 @@ class _AuthGateState extends State<AuthGate> {
       if (authState.event == AuthChangeEvent.passwordRecovery) {
         _openRecoveryRoute();
       }
+      if (authState.event == AuthChangeEvent.signedOut ||
+          authState.event == AuthChangeEvent.signedIn) {
+        unawaited(
+          _sincronizarNotificacionesDeLaCuenta(
+            restaurar: authState.event == AuthChangeEvent.signedIn,
+          ),
+        );
+      }
     });
+  }
+
+  Future<void> _sincronizarNotificacionesDeLaCuenta({
+    required bool restaurar,
+  }) async {
+    try {
+      await NotificationService.cancelarTodas();
+      if (restaurar) await NotificationService.restaurarRecordatorios();
+    } catch (_) {
+      // Account navigation must not depend on local notification permissions.
+    }
   }
 
   void _openRecoveryRoute() {

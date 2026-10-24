@@ -65,6 +65,62 @@ class NotificationService {
 
   static Future<void> cancelarTodas() => _plugin.cancelAll();
 
+  /// Recreates active reminders after the user enables notifications again.
+  static Future<void> restaurarRecordatorios() async {
+    if (!_listo || !AppSettings.instance.notificationsEnabled) return;
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    final tareas = await supabase
+        .from('tareas')
+        .select('id, titulo, fecha_limite')
+        .eq('usuario_id', userId)
+        .eq('estado', 'pendiente');
+    for (final item in tareas) {
+      final fecha = DateTime.tryParse(item['fecha_limite']?.toString() ?? '');
+      if (fecha == null) continue;
+      await programarRecordatorioTarea(
+        tareaId: item['id'].toString(),
+        titulo: item['titulo']?.toString() ?? 'Tarea pendiente',
+        fechaLimite: fecha,
+      );
+    }
+
+    final movimientos = await supabase
+        .from('movimientos_recurrentes')
+        .select('id, tipo, descripcion, proxima_fecha')
+        .eq('usuario_id', userId)
+        .eq('activo', true);
+    for (final item in movimientos) {
+      final fecha = DateTime.tryParse(item['proxima_fecha']?.toString() ?? '');
+      if (fecha == null) continue;
+      await programarRecordatorioFinanciero(
+        recurrenciaId: item['id'].toString(),
+        tipo: item['tipo']?.toString() ?? 'gasto',
+        descripcion: item['descripcion']?.toString() ?? 'Movimiento recurrente',
+        proximaFecha: fecha,
+      );
+    }
+
+    final metas = await supabase
+        .from('metas_ahorro')
+        .select('id, nombre, aporte_programado, frecuencia_aporte, proximo_aporte')
+        .eq('usuario_id', userId)
+        .eq('estado', 'activa');
+    for (final item in metas) {
+      final fecha = DateTime.tryParse(item['proximo_aporte']?.toString() ?? '');
+      final aporte = (item['aporte_programado'] as num?)?.toDouble() ?? 0;
+      if (fecha == null || aporte <= 0) continue;
+      await programarRecordatorioMeta(
+        metaId: item['id'].toString(),
+        nombre: item['nombre']?.toString() ?? 'Meta de ahorro',
+        aporte: aporte,
+        frecuencia: item['frecuencia_aporte']?.toString() ?? 'mensual',
+        proximoAporte: fecha,
+      );
+    }
+  }
+
   // Canal para recordatorios de tareas.
   static const AndroidNotificationDetails _canalTareas =
       AndroidNotificationDetails(
@@ -180,6 +236,7 @@ class NotificationService {
       proximoAporte.day,
       9,
     );
+    if (aviso.isBefore(DateTime.now())) return;
     await _plugin.zonedSchedule(
       _notificationId('meta:$metaId'),
       'Recuerda tu aporte a "$nombre" 🎯',
