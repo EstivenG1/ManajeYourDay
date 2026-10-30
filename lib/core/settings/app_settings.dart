@@ -37,8 +37,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   Future<void> setThemeMode(ThemeMode value) async {
-    _themeMode = value;
-    notifyListeners();
+    // Theme changes are intentionally applied on the next app launch.
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('dark_mode', value == ThemeMode.dark);
   }
@@ -51,8 +50,7 @@ class AppSettings extends ChangeNotifier {
   }
 
   Future<void> setHighContrast(bool value) async {
-    _highContrast = value;
-    notifyListeners();
+    // Contrast changes are intentionally applied on the next app launch.
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('high_contrast', value);
   }

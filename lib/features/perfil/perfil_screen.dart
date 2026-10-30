@@ -1,12 +1,15 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/plan_service.dart';
 import '../legal/centro_ayuda_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
@@ -36,6 +39,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   String _moneda = 'COP';
   String _idioma = 'es';
+  bool _modoOscuro = AppSettings.instance.isDark;
+  bool _altoContraste = AppSettings.instance.highContrast;
 
   String? _avatarUrl;
   String? _correo;
@@ -45,11 +50,145 @@ class _PerfilScreenState extends State<PerfilScreen> {
   bool _cargando = true;
   bool _guardando = false;
   bool _subiendoFoto = false;
+  bool _cargandoPlan = true;
+  bool _iniciandoCheckout = false;
+  PlanTier? _plan;
+  PlanBillingPeriod _periodoSeleccionado = PlanBillingPeriod.monthly;
+  String? _errorPlan;
+
+  void _mostrarReinicioRequerido() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          appText(
+            context,
+            'Cambio guardado. Cierra y vuelve a abrir la app para aplicarlo sin ralentizarla.',
+            'Change saved. Close and reopen the app to apply it without slowing it down.',
+          ),
+        ),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
 
   @override
   void initState() {
     super.initState();
     _cargarPerfil();
+    _cargarPlan();
+  }
+
+  Future<void> _cargarPlan() async {
+    setState(() {
+      _cargandoPlan = true;
+      _errorPlan = null;
+    });
+    try {
+      final plan = await PlanService.loadCurrentUserPlan();
+      if (!mounted) return;
+      setState(() {
+        _plan = plan;
+        _cargandoPlan = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _errorPlan = 'No se pudo consultar tu plan: $error';
+        _cargandoPlan = false;
+      });
+    }
+  }
+
+  Future<void> _iniciarCheckout(PlanTier plan, PlanBillingPeriod period) async {
+    setState(() => _iniciandoCheckout = true);
+    try {
+      final checkoutUri = await PlanService.startWebCheckout(plan, period);
+      if (!mounted) return;
+      final opened = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            appText(context, 'Continuar al pago', 'Continue to payment'),
+          ),
+          content: Text(
+            appText(
+              context,
+              'Mercado Pago abrirá el pago seguro. El plan se activa cuando Supabase confirme la suscripción; volver a esta pantalla no confirma un pago.',
+              'Mercado Pago will open the secure checkout. Your plan activates after Supabase confirms the subscription; returning to this screen does not confirm payment.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(appText(context, 'Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  final didLaunch = await launchUrl(
+                    checkoutUri,
+                    mode: LaunchMode.externalApplication,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext, didLaunch);
+                  }
+                } catch (error) {
+                  debugPrint('Unable to open Mercado Pago checkout: $error');
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext, false);
+                  }
+                }
+              },
+              child: Text(
+                appText(context, 'Abrir Mercado Pago', 'Open Mercado Pago'),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (opened == true && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'Al finalizar, vuelve aquí y actualiza el plan.',
+                'After checkout, return here and refresh the plan.',
+              ),
+            ),
+          ),
+        );
+      } else if (opened == false && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'No se pudo abrir Mercado Pago.',
+                'Could not open Mercado Pago.',
+              ),
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      debugPrint('Unable to initiate subscription checkout: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'No se pudo iniciar el pago. Inténtalo más tarde.',
+                'Could not start checkout. Please try again later.',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _iniciandoCheckout = false);
+    }
   }
 
   Future<void> _cargarPerfil() async {
@@ -403,13 +542,15 @@ class _PerfilScreenState extends State<PerfilScreen> {
                     Text(
                       appText(
                         context,
-                        'MYD es gratuita. Todas las funciones disponibles están incluidas.',
-                        'MYD is free. All available features are included.',
+                        'Consulta el nivel y los límites de tu cuenta.',
+                        'See your account plan and limits.',
                       ),
                       textAlign: TextAlign.center,
                       style: AppTypography.secondary,
                     ),
 
+                    const SizedBox(height: 12),
+                    _tarjetaPlan(),
                     const SizedBox(height: 28),
 
                     _seccionTitulo(
@@ -503,10 +644,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
                           'Use a dark appearance',
                         ),
                       ),
-                      value: AppSettings.instance.isDark,
-                      onChanged: (value) => AppSettings.instance.setThemeMode(
-                        value ? ThemeMode.dark : ThemeMode.light,
-                      ),
+                      value: _modoOscuro,
+                      onChanged: (value) async {
+                        setState(() => _modoOscuro = value);
+                        await AppSettings.instance.setThemeMode(
+                          value ? ThemeMode.dark : ThemeMode.light,
+                        );
+                        if (mounted) _mostrarReinicioRequerido();
+                      },
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
@@ -520,8 +665,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
                           'Increase text and border contrast',
                         ),
                       ),
-                      value: AppSettings.instance.highContrast,
-                      onChanged: AppSettings.instance.setHighContrast,
+                      value: _altoContraste,
+                      onChanged: (value) async {
+                        setState(() => _altoContraste = value);
+                        await AppSettings.instance.setHighContrast(value);
+                        if (mounted) _mostrarReinicioRequerido();
+                      },
                     ),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
@@ -653,6 +802,294 @@ class _PerfilScreenState extends State<PerfilScreen> {
         ),
       ),
     );
+  }
+
+  Widget _tarjetaPlan() {
+    final plan = _plan;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: _cargandoPlan
+            ? const Center(child: CircularProgressIndicator())
+            : _errorPlan != null
+            ? Column(
+                children: [
+                  Text(_errorPlan!, textAlign: TextAlign.center),
+                  TextButton(
+                    onPressed: _cargarPlan,
+                    child: Text(appText(context, 'Reintentar', 'Retry')),
+                  ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.workspace_premium, color: AppColors.gold),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${appText(context, 'Plan actual', 'Current plan')}: ${plan!.label}',
+                        style: AppTypography.itemTitle,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ...PlanResource.values.map((resource) {
+                    final limit = PlanService.limitFor(plan, resource);
+                    final limitText = switch (limit) {
+                      null => appText(
+                        context,
+                        'Sin límite del plan',
+                        'No plan limit',
+                      ),
+                      _ => '${appText(context, 'Hasta', 'Up to')} $limit',
+                    };
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              resource.label,
+                              style: AppTypography.secondary,
+                            ),
+                          ),
+                          Text(limitText, style: AppTypography.secondary),
+                        ],
+                      ),
+                    );
+                  }),
+                  const SizedBox(height: 8),
+                  Text(
+                    appText(
+                      context,
+                      'Los límites mensuales se reinician cada mes. Los datos existentes no se eliminan al cambiar de plan.',
+                      'Monthly limits reset each month. Existing data is not deleted when changing plans.',
+                    ),
+                    style: AppTypography.secondary,
+                  ),
+                  const Divider(height: 28),
+                  Text(
+                    appText(context, 'Compara los planes', 'Compare plans'),
+                    style: AppTypography.itemTitle,
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<PlanBillingPeriod>(
+                    segments: [
+                      ButtonSegment(
+                        value: PlanBillingPeriod.monthly,
+                        label: Text(appText(context, 'Mensual', 'Monthly')),
+                      ),
+                      ButtonSegment(
+                        value: PlanBillingPeriod.annual,
+                        label: Text(appText(context, 'Anual', 'Annual')),
+                      ),
+                    ],
+                    selected: {_periodoSeleccionado},
+                    onSelectionChanged: (selection) {
+                      setState(() => _periodoSeleccionado = selection.first);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  ...PlanTier.values.map(
+                    (tier) => Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _tarjetaOfertaPlan(tier, plan),
+                    ),
+                  ),
+                  if (kIsWeb && plan != PlanTier.free)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Text(
+                        appText(
+                          context,
+                          'Ya tienes una suscripción activa. La renovación y cancelación todavía no se pueden administrar desde MYD.',
+                          'You already have an active subscription. Renewal and cancellation are not yet available in MYD.',
+                        ),
+                        style: AppTypography.secondary,
+                      ),
+                    ),
+                  if (!kIsWeb)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        appText(
+                          context,
+                          'La compra está disponible en la versión web de MYD.',
+                          'Purchases are available in the MYD web app.',
+                        ),
+                        style: AppTypography.secondary,
+                      ),
+                    ),
+                  if (kIsWeb) ...[
+                    TextButton.icon(
+                      onPressed: _cargandoPlan ? null : _cargarPlan,
+                      icon: const Icon(Icons.refresh),
+                      label: Text(
+                        appText(context, 'Actualizar plan', 'Refresh plan'),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+
+  Widget _tarjetaOfertaPlan(PlanTier tier, PlanTier planActual) {
+    final isCurrent = tier == planActual;
+    final price = PlanService.priceCopFor(tier, _periodoSeleccionado);
+    final priceLabel = price == null
+        ? appText(context, 'Gratis', 'Free')
+        : '\$${_formatearPrecioCop(price)} COP / '
+              '${_periodoSeleccionado == PlanBillingPeriod.monthly ? appText(context, 'mes', 'month') : appText(context, 'año', 'year')}';
+    final features = switch (tier) {
+      PlanTier.free => [
+        appText(
+          context,
+          'Hasta 50 tareas nuevas al mes',
+          'Up to 50 new tasks per month',
+        ),
+        appText(
+          context,
+          'Hasta 100 movimientos al mes',
+          'Up to 100 transactions per month',
+        ),
+        appText(
+          context,
+          '2 presupuestos y 2 metas activas',
+          '2 active budgets and 2 active goals',
+        ),
+        appText(
+          context,
+          'Reportes y exportación CSV',
+          'Reports and CSV export',
+        ),
+      ],
+      PlanTier.standard => [
+        appText(
+          context,
+          'Hasta 500 tareas y 1.000 movimientos al mes',
+          'Up to 500 tasks and 1,000 transactions per month',
+        ),
+        appText(
+          context,
+          'Hasta 10 presupuestos y 10 metas activas',
+          'Up to 10 active budgets and 10 active goals',
+        ),
+        appText(
+          context,
+          '25 recordatorios y 30 recibos al mes',
+          '25 reminders and 30 receipts per month',
+        ),
+        appText(context, 'Exportación CSV y Excel', 'CSV and Excel export'),
+      ],
+      PlanTier.premium => [
+        appText(
+          context,
+          'Tareas, movimientos, presupuestos y metas sin límite del plan',
+          'Tasks, transactions, budgets, and goals with no plan limit',
+        ),
+        appText(
+          context,
+          'Hasta 100 recibos al mes',
+          'Up to 100 receipts per month',
+        ),
+        appText(
+          context,
+          'Exportación CSV, Excel y PDF',
+          'CSV, Excel, and PDF export',
+        ),
+      ],
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(tier.label, style: AppTypography.itemTitle),
+                ),
+                if (isCurrent)
+                  Chip(
+                    label: Text(
+                      appText(context, 'Plan actual', 'Current plan'),
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(priceLabel, style: AppTypography.itemTitle),
+            const SizedBox(height: 8),
+            ...features.map(
+              (feature) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.check_circle_outline,
+                      size: 18,
+                      color: AppColors.gold,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(feature, style: AppTypography.secondary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (tier != PlanTier.free)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: FilledButton(
+                  onPressed:
+                      isCurrent ||
+                          planActual != PlanTier.free ||
+                          !kIsWeb ||
+                          _iniciandoCheckout
+                      ? null
+                      : () => _iniciarCheckout(tier, _periodoSeleccionado),
+                  child: _iniciandoCheckout && !isCurrent
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Text(
+                          isCurrent
+                              ? appText(context, 'Plan activo', 'Active plan')
+                              : appText(
+                                  context,
+                                  'Elegir ${tier.label}',
+                                  'Choose ${tier.label}',
+                                ),
+                        ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatearPrecioCop(int amount) {
+    final digits = amount.toString();
+    final grouped = StringBuffer();
+    for (var index = 0; index < digits.length; index++) {
+      if (index > 0 && (digits.length - index) % 3 == 0) {
+        grouped.write('.');
+      }
+      grouped.write(digits[index]);
+    }
+    return grouped.toString();
   }
 
   // ============================================================

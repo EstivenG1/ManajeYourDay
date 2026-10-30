@@ -47,3 +47,12 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Signing keystore (P0: never commit private keys)
+key.properties
+release-keystore.jks
+*.jks
+*.keystore
+
+# Local Supabase Edge Function secrets
+/supabase/functions/.env
