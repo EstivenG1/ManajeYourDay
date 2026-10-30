@@ -110,8 +110,14 @@ Deno.serve(async (request: Request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
   const webUrl = Deno.env.get("MYD_WEB_URL");
+  const paymentEnvironment = Deno.env.get("MERCADOPAGO_ENVIRONMENT") ?? "production";
+  const testPayerEmail = Deno.env.get("MERCADOPAGO_TEST_PAYER_EMAIL");
   if (!url || !anonKey || !serviceRoleKey || !accessToken || !webUrl) {
     console.error("start-subscription: required server configuration is missing");
+    return jsonResponse({ error: "Payment service is not configured" }, 503, headers);
+  }
+  if (paymentEnvironment !== "test" && paymentEnvironment !== "production") {
+    console.error("start-subscription: MERCADOPAGO_ENVIRONMENT is invalid");
     return jsonResponse({ error: "Payment service is not configured" }, 503, headers);
   }
 
@@ -139,6 +145,11 @@ Deno.serve(async (request: Request) => {
   const { data: { user }, error: userError } = await userClient.auth.getUser();
   if (userError || !user?.email || !user.email_confirmed_at) {
     return jsonResponse({ error: "A verified account email is required" }, 401, headers);
+  }
+  const payerEmail = paymentEnvironment === "test" ? testPayerEmail : user.email;
+  if (!payerEmail) {
+    console.error("start-subscription: test payer email is not configured");
+    return jsonResponse({ error: "Payment service is not configured" }, 503, headers);
   }
 
   let selection: { plan?: unknown; billingPeriod?: unknown };
@@ -226,7 +237,7 @@ Deno.serve(async (request: Request) => {
       body: JSON.stringify({
         reason: offer.reason,
         external_reference: externalReference,
-        payer_email: user.email,
+        payer_email: payerEmail,
         auto_recurring: {
           frequency,
           frequency_type: "months",
