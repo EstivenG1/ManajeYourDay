@@ -39,6 +39,43 @@ function jsonResponse(
   });
 }
 
+function safeProviderText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[redacted-email]")
+    .replace(/\b(?:APP_USR|TEST)-[A-Z0-9-]+\b/gi, "[redacted-token]")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, "[redacted-id]")
+    .slice(0, 240);
+}
+
+function providerErrorSummary(value: unknown): Record<string, unknown> | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const providerError = value as Record<string, unknown>;
+  const summary: Record<string, unknown> = {};
+  const error = safeProviderText(providerError.error);
+  const message = safeProviderText(providerError.message);
+  if (error) summary.error = error;
+  if (message) summary.message = message;
+
+  if (Array.isArray(providerError.cause)) {
+    summary.causes = providerError.cause.slice(0, 5).map((cause) => {
+      if (cause === null || typeof cause !== "object" || Array.isArray(cause)) {
+        return {};
+      }
+      const item = cause as Record<string, unknown>;
+      return {
+        code: safeProviderText(item.code),
+        description: safeProviderText(item.description),
+      };
+    });
+  }
+
+  return Object.keys(summary).length > 0 ? summary : null;
+}
+
 async function markCheckoutFailed(
   adminClient: ReturnType<typeof createClient>,
   checkoutId: string,
@@ -212,9 +249,19 @@ Deno.serve(async (request: Request) => {
 
   if (!providerResponse.ok) {
     await markCheckoutFailed(adminClient, checkout.id, user.id);
+    let providerError: Record<string, unknown> | null = null;
+    try {
+      providerError = providerErrorSummary(await providerResponse.json());
+    } catch (error) {
+      console.error("start-subscription: could not parse Mercado Pago error response", {
+        userId: user.id,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
     console.error("start-subscription: Mercado Pago rejected checkout", {
       userId: user.id,
       status: providerResponse.status,
+      providerError,
     });
     return jsonResponse({ error: "Could not create payment checkout" }, 502, headers);
   }
