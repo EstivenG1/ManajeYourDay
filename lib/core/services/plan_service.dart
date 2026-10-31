@@ -41,6 +41,25 @@ enum PlanExportFormat { csv, excel, pdf }
 
 enum PlanBillingPeriod { monthly, annual }
 
+class PlanUpgradeQuote {
+  const PlanUpgradeQuote({
+    required this.billingPeriod,
+    required this.discountedAmountCop,
+    required this.regularAmountCop,
+  });
+
+  final PlanBillingPeriod billingPeriod;
+  final int discountedAmountCop;
+  final int regularAmountCop;
+}
+
+class PlanCheckout {
+  const PlanCheckout({required this.checkoutUri, required this.trialDays});
+
+  final Uri checkoutUri;
+  final int trialDays;
+}
+
 class PlanLimitException implements Exception {
   const PlanLimitException(this.resource, this.tier);
 
@@ -92,6 +111,72 @@ class PlanService {
     }
   }
 
+  static Future<PlanUpgradeQuote> previewStandardUpgrade() async {
+    if (supabase.auth.currentUser == null) {
+      throw StateError('A signed-in user is required to upgrade a plan.');
+    }
+
+    final subscription = await supabase
+        .from('billing_subscriptions')
+        .select('billing_period')
+        .eq('plan', 'standard')
+        .eq('status', 'authorized')
+        .eq('upgrade_in_progress', false)
+        .eq('upgrade_discount_pending', false)
+        .maybeSingle();
+    if (subscription == null) {
+      throw StateError('An active Standard subscription is required.');
+    }
+
+    final period = switch (subscription['billing_period']) {
+      'monthly' => PlanBillingPeriod.monthly,
+      'annual' => PlanBillingPeriod.annual,
+      _ => throw const FormatException(
+        'The subscription billing period is invalid.',
+      ),
+    };
+    return PlanUpgradeQuote(
+      billingPeriod: period,
+      discountedAmountCop: premiumUpgradeDiscountCopFor(period),
+      regularAmountCop: priceCopFor(PlanTier.premium, period)!,
+    );
+  }
+
+  static Future<PlanUpgradeQuote> upgradeStandardToPremium() async {
+    if (supabase.auth.currentUser == null) {
+      throw StateError('A signed-in user is required to upgrade a plan.');
+    }
+
+    final response = await supabase.functions.invoke('upgrade-subscription');
+    final data = response.data;
+    if (data is! Map ||
+        data['plan'] != 'premium' ||
+        (data['billingPeriod'] != 'monthly' &&
+            data['billingPeriod'] != 'annual') ||
+        data['nextAmountCop'] is! int ||
+        data['regularAmountCop'] is! int) {
+      throw const FormatException('The upgrade response is invalid.');
+    }
+
+    final quote = PlanUpgradeQuote(
+      billingPeriod: data['billingPeriod'] == 'annual'
+          ? PlanBillingPeriod.annual
+          : PlanBillingPeriod.monthly,
+      discountedAmountCop: data['nextAmountCop'] as int,
+      regularAmountCop: data['regularAmountCop'] as int,
+    );
+    final expectedRegularAmount = priceCopFor(
+      PlanTier.premium,
+      quote.billingPeriod,
+    );
+    if (quote.regularAmountCop != expectedRegularAmount ||
+        quote.discountedAmountCop != expectedRegularAmount! ~/ 2) {
+      throw const FormatException('The upgrade amount is invalid.');
+    }
+
+    return quote;
+  }
+
   static int? limitFor(PlanTier tier, PlanResource resource) {
     return switch ((tier, resource)) {
       (PlanTier.free, PlanResource.tasksMonthly) => 50,
@@ -133,7 +218,15 @@ class PlanService {
     };
   }
 
-  static Future<Uri> startWebCheckout(
+  static int premiumUpgradeDiscountCopFor(PlanBillingPeriod period) {
+    final regularAmount = priceCopFor(PlanTier.premium, period);
+    if (regularAmount == null) {
+      throw StateError('Premium pricing is unavailable.');
+    }
+    return regularAmount ~/ 2;
+  }
+
+  static Future<PlanCheckout> startWebCheckout(
     PlanTier tier,
     PlanBillingPeriod period,
   ) async {
@@ -153,7 +246,10 @@ class PlanService {
           throw error;
         });
     final data = response.data;
-    if (data is! Map || data['checkoutUrl'] is! String) {
+    if (data is! Map ||
+        data['checkoutUrl'] is! String ||
+        (data['trialDays'] != 0 && data['trialDays'] != 7) ||
+        (tier != PlanTier.standard && data['trialDays'] != 0)) {
       throw const FormatException('The checkout response is invalid.');
     }
 
@@ -164,7 +260,10 @@ class PlanService {
             checkoutUri.host.endsWith('.mercadopago.com.co'))) {
       throw const FormatException('The checkout URL is not trusted.');
     }
-    return checkoutUri;
+    return PlanCheckout(
+      checkoutUri: checkoutUri,
+      trialDays: data['trialDays'] as int,
+    );
   }
 
   static Future<void> ensureCanCreate(PlanResource resource) async {

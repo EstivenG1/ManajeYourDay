@@ -132,8 +132,15 @@ class _PerfilScreenState extends State<PerfilScreen>
   Future<void> _iniciarCheckout(PlanTier plan, PlanBillingPeriod period) async {
     setState(() => _iniciandoCheckout = true);
     try {
-      final checkoutUri = await PlanService.startWebCheckout(plan, period);
+      final checkout = await PlanService.startWebCheckout(plan, period);
       if (!mounted) return;
+      final trialNotice = checkout.trialDays == 7
+          ? appText(
+              context,
+              'En este entorno de prueba tienes 7 días gratis; después se cobrará ${_formatearPrecioCop(PlanService.priceCopFor(plan, period)!)} COP por ${period == PlanBillingPeriod.monthly ? 'mes' : 'año'}. No se cobrarán los \$100 COP adicionales.',
+              'In this test environment, you get 7 days free; afterward, ${_formatearPrecioCop(PlanService.priceCopFor(plan, period)!)} COP will be charged per ${period == PlanBillingPeriod.monthly ? 'month' : 'year'}. No additional COP 100 fee will be charged.',
+            )
+          : '';
       final opened = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -143,8 +150,14 @@ class _PerfilScreenState extends State<PerfilScreen>
           content: Text(
             appText(
               context,
-              'Mercado Pago abrirá el pago seguro. El plan se activa cuando Supabase confirme la suscripción; volver a esta pantalla no confirma un pago.',
-              'Mercado Pago will open the secure checkout. Your plan activates after Supabase confirms the subscription; returning to this screen does not confirm payment.',
+              [
+                if (trialNotice.isNotEmpty) trialNotice,
+                'Mercado Pago abrirá el pago seguro. El plan se activa cuando Supabase confirme la suscripción; volver a esta pantalla no confirma un pago.',
+              ].join(' '),
+              [
+                if (trialNotice.isNotEmpty) trialNotice,
+                'Mercado Pago will open the secure checkout. Your plan activates after Supabase confirms the subscription; returning to this screen does not confirm payment.',
+              ].join(' '),
             ),
           ),
           actions: [
@@ -156,7 +169,7 @@ class _PerfilScreenState extends State<PerfilScreen>
               onPressed: () async {
                 try {
                   final didLaunch = await launchUrl(
-                    checkoutUri,
+                    checkout.checkoutUri,
                     mode: LaunchMode.externalApplication,
                   );
                   if (dialogContext.mounted) {
@@ -217,6 +230,87 @@ class _PerfilScreenState extends State<PerfilScreen>
               );
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) setState(() => _iniciandoCheckout = false);
+    }
+  }
+
+  Future<void> _mejorarPlanAPremium() async {
+    setState(() => _iniciandoCheckout = true);
+    try {
+      final quote = await PlanService.previewStandardUpgrade();
+      if (!mounted) return;
+      final amount = _formatearPrecioCop(quote.discountedAmountCop);
+      final regularAmount = _formatearPrecioCop(quote.regularAmountCop);
+      final billingPeriod = quote.billingPeriod == PlanBillingPeriod.monthly
+          ? appText(context, 'mes', 'month')
+          : appText(context, 'año', 'year');
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            appText(context, 'Mejorar a Premium', 'Upgrade to Premium'),
+          ),
+          content: Text(
+            appText(
+              context,
+              'Solicitaremos cambiar tu suscripción actual a Premium. El próximo cobro esperado es \$$amount COP por $billingPeriod (50% de descuento); después, \$$regularAmount COP por $billingPeriod. Mercado Pago no garantiza cuándo impactan los cambios de precio: revisa el monto y la fecha en su pantalla antes de confirmar cualquier cobro.',
+              'We will request to change your current subscription to Premium. The expected next charge is \$$amount COP per $billingPeriod (50% off); after that, \$$regularAmount COP per $billingPeriod. Mercado Pago does not guarantee when price changes take effect: verify the amount and date on its screen before confirming any charge.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(appText(context, 'Ahora no', 'Not now')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(
+                appText(context, 'Confirmar mejora', 'Confirm upgrade'),
+              ),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+
+      final appliedQuote = await PlanService.upgradeStandardToPremium();
+      if (!mounted) return;
+      if (appliedQuote.discountedAmountCop != quote.discountedAmountCop ||
+          appliedQuote.regularAmountCop != quote.regularAmountCop ||
+          appliedQuote.billingPeriod != quote.billingPeriod) {
+        await _cargarPlan();
+        throw const FormatException('The upgrade amount changed.');
+      }
+
+      await _cargarPlan();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            appText(
+              context,
+              'Premium activado. Próximo cobro: \$$amount COP; después: \$$regularAmount COP por $billingPeriod.',
+              'Premium activated. Next charge: \$$amount COP; after that: \$$regularAmount COP per $billingPeriod.',
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Unable to upgrade subscription: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'No se pudo actualizar la suscripción. No inicies otro pago; actualiza el plan o inténtalo más tarde.',
+                'Could not update the subscription. Do not start another payment; refresh your plan or try again later.',
+              ),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _iniciandoCheckout = false);
@@ -945,8 +1039,12 @@ class _PerfilScreenState extends State<PerfilScreen>
                       child: Text(
                         appText(
                           context,
-                          'Ya tienes una suscripción activa. La renovación y cancelación todavía no se pueden administrar desde MYD.',
-                          'You already have an active subscription. Renewal and cancellation are not yet available in MYD.',
+                          plan == PlanTier.standard
+                              ? 'Tu suscripción Estándar está activa. Puedes probar la mejora a Premium con 50% de descuento en el próximo cobro; verifica siempre el monto y la fecha en Mercado Pago.'
+                              : 'Ya tienes una suscripción activa. La renovación y cancelación todavía no se pueden administrar desde MYD.',
+                          plan == PlanTier.standard
+                              ? 'Your Standard subscription is active. You can test the Premium upgrade with 50% off the next charge; always verify the amount and date in Mercado Pago.'
+                              : 'You already have an active subscription. Renewal and cancellation are not yet available in MYD.',
                         ),
                         style: AppTypography.secondary,
                       ),
@@ -980,6 +1078,8 @@ class _PerfilScreenState extends State<PerfilScreen>
 
   Widget _tarjetaOfertaPlan(PlanTier tier, PlanTier planActual) {
     final isCurrent = tier == planActual;
+    final isPremiumUpgrade =
+        planActual == PlanTier.standard && tier == PlanTier.premium;
     final price = PlanService.priceCopFor(tier, _periodoSeleccionado);
     final priceLabel = price == null
         ? appText(context, 'Gratis', 'Free')
@@ -1093,10 +1193,12 @@ class _PerfilScreenState extends State<PerfilScreen>
                 child: FilledButton(
                   onPressed:
                       isCurrent ||
-                          planActual != PlanTier.free ||
+                          (planActual != PlanTier.free && !isPremiumUpgrade) ||
                           !kIsWeb ||
                           _iniciandoCheckout
                       ? null
+                      : isPremiumUpgrade
+                      ? _mejorarPlanAPremium
                       : () => _iniciarCheckout(tier, _periodoSeleccionado),
                   child: _iniciandoCheckout && !isCurrent
                       ? const SizedBox(
@@ -1107,6 +1209,12 @@ class _PerfilScreenState extends State<PerfilScreen>
                       : Text(
                           isCurrent
                               ? appText(context, 'Plan activo', 'Active plan')
+                              : isPremiumUpgrade
+                              ? appText(
+                                  context,
+                                  'Mejorar con 50% en el próximo cobro',
+                                  'Upgrade with 50% off the next charge',
+                                )
                               : appText(
                                   context,
                                   'Elegir ${tier.label}',

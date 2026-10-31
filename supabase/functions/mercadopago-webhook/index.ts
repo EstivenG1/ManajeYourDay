@@ -13,6 +13,14 @@ type ProviderSubscription = {
   next_payment_date?: unknown;
 };
 
+type AuthorizedPayment = {
+  preapproval_id?: unknown;
+  transaction_amount?: unknown;
+  payment?: {
+    status?: unknown;
+  };
+};
+
 function jsonResponse(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -81,6 +89,200 @@ function providerStatus(value: unknown): string | null {
   }
 }
 
+async function finalizeUpgradeDiscount(
+  adminClient: ReturnType<typeof createClient>,
+  accessToken: string,
+  paymentId: string,
+): Promise<Response> {
+  let paymentResponse: Response;
+  try {
+    paymentResponse = await fetch(
+      `https://api.mercadopago.com/authorized_payments/${encodeURIComponent(paymentId)}`,
+      {
+        headers: { Authorization: "Bearer " + accessToken },
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+  } catch (error) {
+    console.error("mercadopago-webhook: authorized payment lookup failed", {
+      error: error instanceof Error ? error.message : "unknown error",
+    });
+    return jsonResponse({ error: "Could not verify authorized payment" }, 502);
+  }
+  if (!paymentResponse.ok) {
+    console.error("mercadopago-webhook: authorized payment lookup rejected", {
+      status: paymentResponse.status,
+    });
+    return jsonResponse({ error: "Could not verify authorized payment" }, 502);
+  }
+
+  let payment: AuthorizedPayment;
+  try {
+    payment = await paymentResponse.json();
+  } catch {
+    return jsonResponse({ error: "Invalid authorized payment response" }, 502);
+  }
+  if (payment.payment?.status !== "approved") {
+    return jsonResponse({ received: true }, 200);
+  }
+  if (typeof payment.preapproval_id !== "string") {
+    return jsonResponse({ error: "Invalid authorized payment data" }, 422);
+  }
+  const paidAmount = typeof payment.transaction_amount === "number"
+    ? payment.transaction_amount
+    : typeof payment.transaction_amount === "string"
+    ? Number(payment.transaction_amount)
+    : NaN;
+  if (!Number.isSafeInteger(paidAmount)) {
+    return jsonResponse({ error: "Invalid authorized payment amount" }, 422);
+  }
+
+  const { data: current, error: lookupError } = await adminClient
+    .from("billing_subscriptions")
+    .select(
+      "id, provider_subscription_id, external_reference, billing_period, amount_cop, regular_amount_cop, upgrade_discount_pending",
+    )
+    .eq("provider_subscription_id", payment.preapproval_id)
+    .eq("upgrade_discount_pending", true)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("mercadopago-webhook: could not find upgrade promotion", {
+      error: lookupError.message,
+    });
+    return jsonResponse({ error: "Could not reconcile upgrade payment" }, 500);
+  }
+  if (!current) return jsonResponse({ received: true }, 200);
+  if (
+    current.regular_amount_cop === null ||
+    paidAmount !== current.amount_cop ||
+    current.provider_subscription_id !== payment.preapproval_id
+  ) {
+    console.error("mercadopago-webhook: payment does not match pending upgrade discount", {
+      recordId: current.id,
+    });
+    return jsonResponse({ error: "Payment does not match upgrade discount" }, 422);
+  }
+
+  let subscriptionResponse: Response;
+  try {
+    subscriptionResponse = await fetch(
+      `https://api.mercadopago.com/preapproval/${encodeURIComponent(current.provider_subscription_id)}`,
+      {
+        headers: { Authorization: "Bearer " + accessToken },
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+  } catch (error) {
+    console.error("mercadopago-webhook: upgrade subscription lookup failed", {
+      recordId: current.id,
+      error: error instanceof Error ? error.message : "unknown error",
+    });
+    return jsonResponse({ error: "Could not verify upgraded subscription" }, 502);
+  }
+  if (!subscriptionResponse.ok) {
+    console.error("mercadopago-webhook: upgrade subscription lookup rejected", {
+      recordId: current.id,
+      status: subscriptionResponse.status,
+    });
+    return jsonResponse({ error: "Could not verify upgraded subscription" }, 502);
+  }
+
+  let subscription: ProviderSubscription;
+  try {
+    subscription = await subscriptionResponse.json();
+  } catch {
+    return jsonResponse({ error: "Invalid upgraded subscription response" }, 502);
+  }
+  const recurring = subscription.auto_recurring;
+  if (
+    subscription.id !== current.provider_subscription_id ||
+    subscription.external_reference !== current.external_reference ||
+    providerStatus(subscription.status) !== "authorized" ||
+    recurring?.currency_id !== "COP" ||
+    (recurring.transaction_amount !== current.amount_cop &&
+      recurring.transaction_amount !== current.regular_amount_cop)
+  ) {
+    console.error("mercadopago-webhook: upgraded subscription does not match local data", {
+      recordId: current.id,
+    });
+    return jsonResponse({ error: "Upgraded subscription does not match" }, 422);
+  }
+
+  if (recurring.transaction_amount !== current.regular_amount_cop) {
+    let updateResponse: Response;
+    try {
+      updateResponse = await fetch(
+        `https://api.mercadopago.com/preapproval/${encodeURIComponent(current.provider_subscription_id)}`,
+        {
+          method: "PUT",
+          headers: {
+            Authorization: "Bearer " + accessToken,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            auto_recurring: {
+              transaction_amount: current.regular_amount_cop,
+              currency_id: "COP",
+            },
+          }),
+          signal: AbortSignal.timeout(10000),
+        },
+      );
+    } catch (error) {
+      console.error("mercadopago-webhook: could not restore regular Premium price", {
+        recordId: current.id,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+      return jsonResponse({ error: "Could not restore regular subscription price" }, 502);
+    }
+    if (!updateResponse.ok) {
+      console.error("mercadopago-webhook: regular Premium price update rejected", {
+        recordId: current.id,
+        status: updateResponse.status,
+      });
+      return jsonResponse({ error: "Could not restore regular subscription price" }, 502);
+    }
+
+    let updatedSubscription: ProviderSubscription;
+    try {
+      updatedSubscription = await updateResponse.json();
+    } catch {
+      return jsonResponse({ error: "Invalid updated subscription response" }, 502);
+    }
+    if (
+      updatedSubscription.id !== current.provider_subscription_id ||
+      updatedSubscription.auto_recurring?.transaction_amount !==
+        current.regular_amount_cop ||
+      updatedSubscription.auto_recurring.currency_id !== "COP"
+    ) {
+      console.error("mercadopago-webhook: regular Premium price was not confirmed", {
+        recordId: current.id,
+      });
+      return jsonResponse({ error: "Could not verify regular subscription price" }, 502);
+    }
+  }
+
+  const { error: updateError } = await adminClient
+    .from("billing_subscriptions")
+    .update({
+      amount_cop: current.regular_amount_cop,
+      regular_amount_cop: null,
+      upgrade_discount_pending: false,
+    })
+    .eq("id", current.id)
+    .eq("upgrade_discount_pending", true)
+    .eq("amount_cop", current.amount_cop);
+  if (updateError) {
+    console.error("mercadopago-webhook: could not finalize upgrade promotion", {
+      recordId: current.id,
+      error: updateError.message,
+    });
+    return jsonResponse({ error: "Could not finalize upgrade promotion" }, 500);
+  }
+
+  return jsonResponse({ received: true }, 200);
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") {
     return jsonResponse({ error: "Method not allowed" }, 405);
@@ -124,6 +326,16 @@ Deno.serve(async (request: Request) => {
     notification = await request.json();
   } catch {
     return jsonResponse({ error: "Invalid webhook body" }, 400);
+  }
+  if (
+    notification.type === "subscription_authorized_payment" ||
+    (typeof notification.action === "string" &&
+      notification.action.startsWith("subscription_authorized_payment"))
+  ) {
+    const adminClient = createClient(url, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    return await finalizeUpgradeDiscount(adminClient, accessToken, dataId);
   }
   if (
     notification.type !== "subscription_preapproval" &&

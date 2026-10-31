@@ -135,6 +135,119 @@ async function markCheckoutFailed(
   }
 }
 
+async function getOrCreateStandardTrialPlan(
+  adminClient: ReturnType<typeof createClient>,
+  accessToken: string,
+  environment: "test" | "production",
+  billingPeriod: "monthly" | "annual",
+  amount: number,
+  reason: string,
+  backUrl: URL,
+): Promise<string> {
+  const { data: existingPlan, error: lookupError } = await adminClient
+    .from("billing_provider_plans")
+    .select("provider_plan_id")
+    .eq("environment", environment)
+    .eq("billing_period", billingPeriod)
+    .eq("trial_days", 7)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("start-subscription: could not look up trial plan", {
+      environment,
+      billingPeriod,
+      error: lookupError.message,
+    });
+    throw new Error("Could not look up trial plan");
+  }
+  if (typeof existingPlan?.provider_plan_id === "string") {
+    return existingPlan.provider_plan_id;
+  }
+
+  const response = await fetch("https://api.mercadopago.com/preapproval_plan", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      reason,
+      auto_recurring: {
+        frequency: billingPeriod === "annual" ? 12 : 1,
+        frequency_type: "months",
+        transaction_amount: amount,
+        currency_id: "COP",
+        free_trial: {
+          frequency: 7,
+          frequency_type: "days",
+        },
+      },
+      back_url: backUrl.toString(),
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    let providerError: Record<string, unknown> | null = null;
+    try {
+      providerError = providerErrorSummary(await response.json());
+    } catch (error) {
+      console.error("start-subscription: could not parse trial plan error", {
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+    }
+    console.error("start-subscription: Mercado Pago rejected trial plan", {
+      status: response.status,
+      providerError,
+    });
+    throw new Error("Could not create trial plan");
+  }
+
+  let providerPlan: { id?: unknown };
+  try {
+    providerPlan = await response.json();
+  } catch {
+    throw new Error("Invalid trial plan response");
+  }
+  if (typeof providerPlan.id !== "string" || providerPlan.id.length === 0) {
+    throw new Error("Trial plan response is missing an id");
+  }
+
+  const { error: insertError } = await adminClient
+    .from("billing_provider_plans")
+    .insert({
+      environment,
+      billing_period: billingPeriod,
+      trial_days: 7,
+      provider_plan_id: providerPlan.id,
+    });
+  if (insertError?.code === "23505") {
+    const { data: winningPlan, error: raceLookupError } = await adminClient
+      .from("billing_provider_plans")
+      .select("provider_plan_id")
+      .eq("environment", environment)
+      .eq("billing_period", billingPeriod)
+      .eq("trial_days", 7)
+      .maybeSingle();
+    if (!raceLookupError && typeof winningPlan?.provider_plan_id === "string") {
+      return winningPlan.provider_plan_id;
+    }
+    console.error("start-subscription: could not resolve concurrent trial plan", {
+      environment,
+      billingPeriod,
+      error: raceLookupError?.message,
+    });
+    throw new Error("Could not resolve trial plan");
+  }
+  if (insertError) {
+    console.error("start-subscription: could not save trial plan", {
+      environment,
+      billingPeriod,
+      error: insertError.message,
+    });
+    throw new Error("Could not save trial plan");
+  }
+  return providerPlan.id;
+}
+
 Deno.serve(async (request: Request) => {
   const headers = corsHeaders(request.headers.get("Origin"));
   if (request.method === "OPTIONS") return new Response("ok", { headers });
@@ -215,6 +328,7 @@ Deno.serve(async (request: Request) => {
   const billingPeriod = selection.billingPeriod;
   const offer = CATALOG[plan][billingPeriod];
   const frequency = billingPeriod === "annual" ? 12 : 1;
+  const trialDays = paymentEnvironment === "test" && plan === "standard" ? 7 : 0;
   const adminClient = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -222,7 +336,7 @@ Deno.serve(async (request: Request) => {
   const { data: openSubscription, error: openSubscriptionError } = await adminClient
     .from("billing_subscriptions")
     .select(
-      "id, external_reference, provider_subscription_id, plan, billing_period, amount_cop, status, created_at, current_period_end",
+      "id, external_reference, provider_subscription_id, plan, billing_period, amount_cop, status, trial_days, created_at, current_period_end",
     )
     .eq("user_id", user.id)
     .in("status", ["checkout_pending", "pending", "authorized", "paused"])
@@ -352,7 +466,14 @@ Deno.serve(async (request: Request) => {
         if (!isTrustedCheckoutUrl(existing.init_point)) {
           return jsonResponse({ error: "Invalid checkout URL from payment provider" }, 502, headers);
         }
-        return jsonResponse({ checkoutUrl: existing.init_point }, 200, headers);
+        if (openSubscription.trial_days !== 0 && openSubscription.trial_days !== 7) {
+          return jsonResponse({ error: "Invalid subscription trial" }, 422, headers);
+        }
+        return jsonResponse(
+          { checkoutUrl: existing.init_point, trialDays: openSubscription.trial_days },
+          200,
+          headers,
+        );
       }
 
       if (existingStatus === "authorized" || existingStatus === "paused") {
@@ -391,6 +512,7 @@ Deno.serve(async (request: Request) => {
       plan,
       billing_period: billingPeriod,
       amount_cop: offer.amount,
+      trial_days: trialDays,
       status: "checkout_pending",
     })
     .select("id")
@@ -410,6 +532,57 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Could not start checkout" }, 500, headers);
   }
 
+  let providerPlanId: string | null = null;
+  if (trialDays === 7) {
+    try {
+      providerPlanId = await getOrCreateStandardTrialPlan(
+        adminClient,
+        accessToken,
+        paymentEnvironment,
+        billingPeriod,
+        offer.amount,
+        offer.reason,
+        backUrl,
+      );
+    } catch (error) {
+      await markCheckoutFailed(adminClient, checkout.id, user.id);
+      console.error("start-subscription: could not prepare Standard trial plan", {
+        userId: user.id,
+        billingPeriod,
+        error: error instanceof Error ? error.message : "unknown error",
+      });
+      return jsonResponse({ error: "Could not prepare trial checkout" }, 502, headers);
+    }
+  }
+
+  const notificationUrl = new URL(
+    "/functions/v1/mercadopago-webhook",
+    url,
+  ).toString();
+  const providerRequest = providerPlanId
+    ? {
+      preapproval_plan_id: providerPlanId,
+      external_reference: externalReference,
+      notification_url: notificationUrl,
+      payer_email: payerEmail,
+      back_url: backUrl.toString(),
+      status: "pending",
+    }
+    : {
+      reason: offer.reason,
+      external_reference: externalReference,
+      notification_url: notificationUrl,
+      payer_email: payerEmail,
+      auto_recurring: {
+        frequency,
+        frequency_type: "months",
+        transaction_amount: offer.amount,
+        currency_id: "COP",
+      },
+      back_url: backUrl.toString(),
+      status: "pending",
+    };
+
   let providerResponse: Response;
   try {
     providerResponse = await fetch("https://api.mercadopago.com/preapproval", {
@@ -418,23 +591,7 @@ Deno.serve(async (request: Request) => {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        reason: offer.reason,
-        external_reference: externalReference,
-        notification_url: new URL(
-          "/functions/v1/mercadopago-webhook",
-          url,
-        ).toString(),
-        payer_email: payerEmail,
-        auto_recurring: {
-          frequency,
-          frequency_type: "months",
-          transaction_amount: offer.amount,
-          currency_id: "COP",
-        },
-        back_url: backUrl.toString(),
-        status: "pending",
-      }),
+      body: JSON.stringify(providerRequest),
       signal: AbortSignal.timeout(15000),
     });
   } catch (error) {
@@ -519,5 +676,5 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Could not prepare payment checkout" }, 500, headers);
   }
 
-  return jsonResponse({ checkoutUrl }, 200, headers);
+  return jsonResponse({ checkoutUrl, trialDays }, 200, headers);
 });

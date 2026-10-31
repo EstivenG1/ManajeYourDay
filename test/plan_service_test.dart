@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import '../lib/core/services/plan_service.dart';
+import 'package:manage_your_day/core/services/plan_service.dart';
 
 void main() {
   group('PlanTier.fromDatabaseValue', () {
@@ -119,6 +119,19 @@ void main() {
       expect(
         PlanService.priceCopFor(PlanTier.free, PlanBillingPeriod.monthly),
         isNull,
+      );
+    });
+  });
+
+  group('PlanService.premiumUpgradeDiscountCopFor', () {
+    test('discounts one Premium billing cycle by exactly 50%', () {
+      expect(
+        PlanService.premiumUpgradeDiscountCopFor(PlanBillingPeriod.monthly),
+        12450,
+      );
+      expect(
+        PlanService.premiumUpgradeDiscountCopFor(PlanBillingPeriod.annual),
+        124950,
       );
     });
   });
