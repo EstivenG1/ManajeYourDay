@@ -1,3 +1,5 @@
+import 'package:functions_client/functions_client.dart';
+
 import '../supabase/supabase_config.dart';
 
 enum PlanTier {
@@ -51,6 +53,10 @@ class PlanLimitException implements Exception {
       'Puedes cambiar de plan para ampliar el límite.';
 }
 
+class PlanCheckoutConflictException implements Exception {
+  const PlanCheckoutConflictException();
+}
+
 class PlanService {
   PlanService._();
 
@@ -61,6 +67,29 @@ class PlanService {
 
     final value = await supabase.rpc('get_my_plan');
     return PlanTier.fromDatabaseValue(value);
+  }
+
+  static Future<void> syncCurrentUserSubscription() async {
+    if (supabase.auth.currentUser == null) {
+      throw StateError('A signed-in user is required to sync a subscription.');
+    }
+
+    final response = await supabase.functions.invoke('sync-subscription');
+    final data = response.data;
+    if (data is! Map ||
+        data['status'] is! String ||
+        !const {
+          'none',
+          'checkout_pending',
+          'pending',
+          'authorized',
+          'paused',
+          'cancelled',
+          'rejected',
+          'expired',
+        }.contains(data['status'])) {
+      throw const FormatException('The subscription sync response is invalid.');
+    }
   }
 
   static int? limitFor(PlanTier tier, PlanResource resource) {
@@ -112,10 +141,17 @@ class PlanService {
       throw ArgumentError.value(tier, 'tier', 'Free has no paid checkout.');
     }
 
-    final response = await supabase.functions.invoke(
-      'start-subscription',
-      body: {'plan': tier.name, 'billingPeriod': period.name},
-    );
+    final response = await supabase.functions
+        .invoke(
+          'start-subscription',
+          body: {'plan': tier.name, 'billingPeriod': period.name},
+        )
+        .catchError((Object error) {
+          if (error is FunctionException && error.status == 409) {
+            throw const PlanCheckoutConflictException();
+          }
+          throw error;
+        });
     final data = response.data;
     if (data is! Map || data['checkoutUrl'] is! String) {
       throw const FormatException('The checkout response is invalid.');

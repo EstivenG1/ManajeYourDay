@@ -7,6 +7,9 @@ project_id = "ManajeYourDay"
 [functions.mercadopago-webhook]
 verify_jwt = false
 
+[functions.sync-subscription]
+verify_jwt = true
+
 [api]
 enabled = true
 # Port to use for the API URL.

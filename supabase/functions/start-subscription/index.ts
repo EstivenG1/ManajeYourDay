@@ -11,6 +11,48 @@ const CATALOG = {
   },
 } as const;
 
+type ProviderSubscription = {
+  id?: unknown;
+  init_point?: unknown;
+  status?: unknown;
+  external_reference?: unknown;
+  auto_recurring?: {
+    frequency?: unknown;
+    frequency_type?: unknown;
+    transaction_amount?: unknown;
+    currency_id?: unknown;
+  };
+  next_payment_date?: unknown;
+};
+
+function providerStatus(value: unknown): string | null {
+  switch (value) {
+    case "pending":
+    case "authorized":
+    case "paused":
+    case "rejected":
+    case "expired":
+      return value;
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    default:
+      return null;
+  }
+}
+
+function isTrustedCheckoutUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const checkoutUrl = new URL(value);
+    return checkoutUrl.protocol === "https:" &&
+      (checkoutUrl.hostname === "mercadopago.com.co" ||
+        checkoutUrl.hostname.endsWith(".mercadopago.com.co"));
+  } catch {
+    return false;
+  }
+}
+
 function corsHeaders(origin: string | null): Record<string, string> {
   const allowedOrigins = (Deno.env.get("APP_ALLOWED_ORIGINS") ??
     "https://manageyourday.app,http://localhost:5000,http://127.0.0.1:5000")
@@ -172,13 +214,16 @@ Deno.serve(async (request: Request) => {
   const plan = selection.plan;
   const billingPeriod = selection.billingPeriod;
   const offer = CATALOG[plan][billingPeriod];
+  const frequency = billingPeriod === "annual" ? 12 : 1;
   const adminClient = createClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
   const { data: openSubscription, error: openSubscriptionError } = await adminClient
     .from("billing_subscriptions")
-    .select("id")
+    .select(
+      "id, external_reference, provider_subscription_id, plan, billing_period, amount_cop, status, created_at, current_period_end",
+    )
     .eq("user_id", user.id)
     .in("status", ["checkout_pending", "pending", "authorized", "paused"])
     .maybeSingle();
@@ -190,11 +235,151 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Could not start checkout" }, 500, headers);
   }
   if (openSubscription) {
-    return jsonResponse(
-      { error: "An existing subscription must be resolved before starting another" },
-      409,
-      headers,
-    );
+    if (
+      openSubscription.status === "checkout_pending" &&
+      !openSubscription.provider_subscription_id
+    ) {
+      const createdAt = new Date(openSubscription.created_at).getTime();
+      if (!Number.isFinite(createdAt)) {
+        console.error("start-subscription: existing checkout has invalid creation time", {
+          recordId: openSubscription.id,
+        });
+        return jsonResponse({ error: "Could not start checkout" }, 500, headers);
+      }
+      if (Date.now() - createdAt < 5 * 60 * 1000) {
+        return jsonResponse(
+          { error: "Checkout is being prepared. Please try again shortly." },
+          409,
+          headers,
+        );
+      }
+      const { error: expireError } = await adminClient
+        .from("billing_subscriptions")
+        .update({ status: "checkout_failed" })
+        .eq("id", openSubscription.id)
+        .eq("status", "checkout_pending");
+      if (expireError) {
+        console.error("start-subscription: could not expire stale checkout", {
+          recordId: openSubscription.id,
+          error: expireError.message,
+        });
+        return jsonResponse({ error: "Could not start checkout" }, 500, headers);
+      }
+    } else if (openSubscription.provider_subscription_id) {
+      let existingResponse: Response;
+      try {
+        existingResponse = await fetch(
+          `https://api.mercadopago.com/preapproval/${encodeURIComponent(openSubscription.provider_subscription_id)}`,
+          {
+            headers: { Authorization: "Bearer " + accessToken },
+            signal: AbortSignal.timeout(10000),
+          },
+        );
+      } catch (error) {
+        console.error("start-subscription: could not inspect existing checkout", {
+          userId: user.id,
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+        return jsonResponse({ error: "Could not verify existing checkout" }, 502, headers);
+      }
+      if (!existingResponse.ok) {
+        console.error("start-subscription: existing checkout lookup failed", {
+          userId: user.id,
+          status: existingResponse.status,
+        });
+        return jsonResponse({ error: "Could not verify existing checkout" }, 502, headers);
+      }
+
+      let existing: ProviderSubscription;
+      try {
+        existing = await existingResponse.json();
+      } catch {
+        return jsonResponse({ error: "Invalid response from payment provider" }, 502, headers);
+      }
+      const existingStatus = providerStatus(existing.status);
+      const recurring = existing.auto_recurring;
+      if (
+        existing.id !== openSubscription.provider_subscription_id ||
+        existing.external_reference !== openSubscription.external_reference ||
+        !existingStatus ||
+        recurring?.frequency !==
+          (openSubscription.billing_period === "annual" ? 12 : 1) ||
+        recurring.frequency_type !== "months" ||
+        recurring.transaction_amount !== openSubscription.amount_cop ||
+        recurring.currency_id !== "COP"
+      ) {
+        console.error("start-subscription: existing checkout does not match local record", {
+          recordId: openSubscription.id,
+        });
+        return jsonResponse({ error: "Could not verify existing checkout" }, 422, headers);
+      }
+
+      let currentPeriodEnd = openSubscription.current_period_end as string | null;
+      if (typeof existing.next_payment_date === "string") {
+        const parsedDate = new Date(existing.next_payment_date);
+        if (!Number.isFinite(parsedDate.getTime())) {
+          return jsonResponse({ error: "Invalid subscription period" }, 422, headers);
+        }
+        currentPeriodEnd = parsedDate.toISOString();
+      } else if (existingStatus !== "cancelled") {
+        currentPeriodEnd = null;
+      }
+      if (existingStatus !== openSubscription.status) {
+        const { error: updateError } = await adminClient
+          .from("billing_subscriptions")
+          .update({ status: existingStatus, current_period_end: currentPeriodEnd })
+          .eq("id", openSubscription.id);
+        if (updateError) {
+          console.error("start-subscription: could not refresh existing subscription", {
+            recordId: openSubscription.id,
+            error: updateError.message,
+          });
+          return jsonResponse({ error: "Could not refresh subscription" }, 500, headers);
+        }
+      }
+
+      if (existingStatus === "pending") {
+        if (
+          openSubscription.plan !== plan ||
+          openSubscription.billing_period !== billingPeriod
+        ) {
+          return jsonResponse(
+            { error: "Resume or resolve your existing checkout before choosing another plan" },
+            409,
+            headers,
+          );
+        }
+        if (!isTrustedCheckoutUrl(existing.init_point)) {
+          return jsonResponse({ error: "Invalid checkout URL from payment provider" }, 502, headers);
+        }
+        return jsonResponse({ checkoutUrl: existing.init_point }, 200, headers);
+      }
+
+      if (existingStatus === "authorized" || existingStatus === "paused") {
+        return jsonResponse(
+          { error: "An active subscription must be resolved before starting another" },
+          409,
+          headers,
+        );
+      }
+      const { error: closeError } = await adminClient
+        .from("billing_subscriptions")
+        .update({ status: existingStatus, current_period_end: currentPeriodEnd })
+        .eq("id", openSubscription.id);
+      if (closeError) {
+        console.error("start-subscription: could not close existing checkout", {
+          recordId: openSubscription.id,
+          error: closeError.message,
+        });
+        return jsonResponse({ error: "Could not start checkout" }, 500, headers);
+      }
+    } else {
+      return jsonResponse(
+        { error: "An active subscription must be resolved before starting another" },
+        409,
+        headers,
+      );
+    }
   }
 
   const externalReference = crypto.randomUUID();
@@ -225,7 +410,6 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Could not start checkout" }, 500, headers);
   }
 
-  const frequency = billingPeriod === "annual" ? 12 : 1;
   let providerResponse: Response;
   try {
     providerResponse = await fetch("https://api.mercadopago.com/preapproval", {
@@ -237,6 +421,10 @@ Deno.serve(async (request: Request) => {
       body: JSON.stringify({
         reason: offer.reason,
         external_reference: externalReference,
+        notification_url: new URL(
+          "/functions/v1/mercadopago-webhook",
+          url,
+        ).toString(),
         payer_email: payerEmail,
         auto_recurring: {
           frequency,

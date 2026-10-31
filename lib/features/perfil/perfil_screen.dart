@@ -30,7 +30,8 @@ String? _textoMetadata(Map<String, dynamic> metadata, String key) {
   return value is String ? value : null;
 }
 
-class _PerfilScreenState extends State<PerfilScreen> {
+class _PerfilScreenState extends State<PerfilScreen>
+    with WidgetsBindingObserver {
   final _nombreCtrl = TextEditingController();
   final _apellidoCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
@@ -51,10 +52,12 @@ class _PerfilScreenState extends State<PerfilScreen> {
   bool _guardando = false;
   bool _subiendoFoto = false;
   bool _cargandoPlan = true;
+  bool _actualizandoPlan = false;
   bool _iniciandoCheckout = false;
   PlanTier? _plan;
   PlanBillingPeriod _periodoSeleccionado = PlanBillingPeriod.monthly;
   String? _errorPlan;
+  String? _errorSincronizacionPlan;
 
   void _mostrarReinicioRequerido() {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -74,21 +77,46 @@ class _PerfilScreenState extends State<PerfilScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _cargarPerfil();
     _cargarPlan();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_actualizandoPlan) {
+      _cargarPlan();
+    }
+  }
+
   Future<void> _cargarPlan() async {
+    if (_actualizandoPlan) return;
+    _actualizandoPlan = true;
     setState(() {
       _cargandoPlan = true;
       _errorPlan = null;
+      _errorSincronizacionPlan = null;
     });
+    String? syncError;
     try {
+      try {
+        await PlanService.syncCurrentUserSubscription();
+      } catch (error) {
+        debugPrint('Unable to sync Mercado Pago subscription: $error');
+        if (!mounted) return;
+        syncError = appText(
+          context,
+          'No se pudo verificar el pago con Mercado Pago. Intenta actualizar de nuevo.',
+          'Could not verify the Mercado Pago payment. Try refreshing again.',
+        );
+      }
+      if (!mounted) return;
       final plan = await PlanService.loadCurrentUserPlan();
       if (!mounted) return;
       setState(() {
         _plan = plan;
         _cargandoPlan = false;
+        _errorSincronizacionPlan = syncError;
       });
     } catch (error) {
       if (!mounted) return;
@@ -96,6 +124,8 @@ class _PerfilScreenState extends State<PerfilScreen> {
         _errorPlan = 'No se pudo consultar tu plan: $error';
         _cargandoPlan = false;
       });
+    } finally {
+      _actualizandoPlan = false;
     }
   }
 
@@ -174,17 +204,19 @@ class _PerfilScreenState extends State<PerfilScreen> {
     } catch (error) {
       debugPrint('Unable to initiate subscription checkout: $error');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              appText(
+        final message = error is PlanCheckoutConflictException
+            ? appText(
                 context,
-                'No se pudo iniciar el pago. Inténtalo más tarde.',
+                'Hay un pago o una suscripción pendiente. Actualiza el plan o elige el mismo plan para continuar el pago.',
+                'A payment or subscription is pending. Refresh your plan or choose the same plan to continue checkout.',
+              )
+            : appText(
+                context,
+                'No se pudo iniciar el pago. Inténtalo de nuevo más tarde.',
                 'Could not start checkout. Please try again later.',
-              ),
-            ),
-          ),
-        );
+              );
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _iniciandoCheckout = false);
@@ -263,6 +295,7 @@ class _PerfilScreenState extends State<PerfilScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _nombreCtrl.dispose();
     _apellidoCtrl.dispose();
     _telefonoCtrl.dispose();
@@ -834,6 +867,14 @@ class _PerfilScreenState extends State<PerfilScreen> {
                       ),
                     ],
                   ),
+                  if (_errorSincronizacionPlan != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        _errorSincronizacionPlan!,
+                        style: AppTypography.secondary,
+                      ),
+                    ),
                   const SizedBox(height: 12),
                   ...PlanResource.values.map((resource) {
                     final limit = PlanService.limitFor(plan, resource);
