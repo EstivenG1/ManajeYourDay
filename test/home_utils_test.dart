@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myd/core/services/home_utils.dart';
+import 'package:manage_your_day/core/services/home_utils.dart';
 
 void main() {
   group('calcularIndiceProductividad', () {

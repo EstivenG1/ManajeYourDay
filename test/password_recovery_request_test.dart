@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myd/core/theme/app_theme.dart';
-import 'package:myd/features/auth/auth_screen.dart';
-import 'package:myd/features/auth/password_recovery_request_dialog.dart';
+import 'package:manage_your_day/core/theme/app_theme.dart';
+import 'package:manage_your_day/features/auth/auth_screen.dart';
+import 'package:manage_your_day/features/auth/password_recovery_request_dialog.dart';
 
 void main() {
   testWidgets('forgot-password action opens the email request form', (

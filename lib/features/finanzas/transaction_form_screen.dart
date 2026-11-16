@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/localization/app_text.dart';
 import '../../core/formatters/money_input_formatter.dart';
 import '../../core/formatters/category_emoji.dart';
 import '../../core/theme/app_theme.dart';
@@ -11,15 +12,19 @@ import '../../core/services/sugerencias_service.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/location_service.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/guided_tour.dart';
+import '../../core/services/plan_service.dart';
 
 class TransactionFormScreen extends StatefulWidget {
   final String tipoInicial; // 'ingreso' o 'gasto'
   final Map<String, dynamic>? movimiento; // si viene, se está editando
+  final bool mostrarGuia;
 
   const TransactionFormScreen({
     super.key,
     required this.tipoInicial,
     this.movimiento,
+    this.mostrarGuia = false,
   });
 
   @override
@@ -28,13 +33,21 @@ class TransactionFormScreen extends StatefulWidget {
 
 class _TransactionFormScreenState extends State<TransactionFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _tipoKey = GlobalKey();
+  final _montoKey = GlobalKey();
+  final _categoriaKey = GlobalKey();
+  final _descripcionKey = GlobalKey();
+  final _fechaKey = GlobalKey();
+  final _guardarKey = GlobalKey();
   final _montoCtrl = TextEditingController();
+  final _montoFocusNode = FocusNode();
   final _imagePicker = ImagePicker();
   final _speech = stt.SpeechToText();
   TextEditingController? _descripcionCtrl;
   XFile? _recibo;
   bool _eliminarRecibo = false;
   bool _escuchando = false;
+  bool _guiaIniciada = false;
 
   late String _tipo;
   DateTime _fecha = DateTime.now();
@@ -77,12 +90,15 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
       _errorCarga = null;
     });
     try {
+      final user = supabase.auth.currentUser;
+      final userId = user?.id;
+      final filtro = user == null
+          ? 'usuario_id.is.null'
+          : 'usuario_id.is.null,usuario_id.eq.$userId';
       final categorias = await supabase
           .from('categorias')
           .select()
-          .or(
-            'usuario_id.is.null,usuario_id.eq.${supabase.auth.currentUser!.id}',
-          )
+          .or(filtro)
           .eq('tipo', _tipo)
           .order('nombre');
 
@@ -100,6 +116,10 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           _cargando = false;
           _errorCarga = null;
         });
+        if (widget.mostrarGuia && !_guiaIniciada) {
+          _guiaIniciada = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) => _mostrarGuia());
+        }
       }
     } catch (error) {
       if (mounted) {
@@ -111,10 +131,94 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
     }
   }
 
+  Future<void> _mostrarGuia() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null || !mounted) return;
+    await mostrarTourGuiado(
+      context: context,
+      storageKey: 'guided_first_transaction_v2_$userId',
+      force: true,
+      steps: [
+        TutorialStep(
+          title: appText(context, 'Tipo de movimiento', 'Transaction type'),
+          description: appText(
+            context,
+            'Confirma que estás registrando un ingreso.',
+            'Confirm that you are recording income.',
+          ),
+          icon: Icons.swap_horiz_rounded,
+          color: AppColors.green,
+          target: _tipoKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Monto del ingreso', 'Income amount'),
+          description: appText(
+            context,
+            'Escribe cuánto recibiste.',
+            'Enter how much you received.',
+          ),
+          icon: Icons.attach_money_rounded,
+          color: AppColors.green,
+          target: _montoKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Categoría', 'Category'),
+          description: appText(
+            context,
+            'Elige la categoría que mejor describe este ingreso.',
+            'Choose the category that best describes this income.',
+          ),
+          icon: Icons.category_outlined,
+          color: AppColors.green,
+          target: _categoriaKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Descripción', 'Description'),
+          description: appText(
+            context,
+            'Agrega un detalle breve para reconocer el movimiento después.',
+            'Add a short detail so you can recognize this transaction later.',
+          ),
+          icon: Icons.notes_rounded,
+          color: AppColors.green,
+          target: _descripcionKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Fecha', 'Date'),
+          description: appText(
+            context,
+            'Selecciona el día en que recibiste el ingreso.',
+            'Choose the day you received the income.',
+          ),
+          icon: Icons.calendar_today_rounded,
+          color: AppColors.green,
+          target: _fechaKey,
+        ),
+        TutorialStep(
+          title: appText(
+            context,
+            'Guarda el movimiento',
+            'Save the transaction',
+          ),
+          description: appText(
+            context,
+            'Cuando termines, presiona Guardar ingreso. Después te llevaremos a Reportes > Hoy.',
+            'When you are done, tap Save income. Then we will take you to Reports > Today.',
+          ),
+          icon: Icons.check_circle_outline_rounded,
+          color: AppColors.green,
+          target: _guardarKey,
+          nextLabel: appText(context, 'Entendido', 'Got it'),
+        ),
+      ],
+    );
+  }
+
   @override
   void dispose() {
     _speech.stop();
     _montoCtrl.dispose();
+    _montoFocusNode.dispose();
     super.dispose();
   }
 
@@ -249,7 +353,9 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           }
         }
       }
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final datos = {
         'tipo': _tipo,
         'monto': monto,
@@ -261,6 +367,10 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
         'ubicacion_longitud': _guardarUbicacion ? _longitud : null,
       };
 
+      if (_recibo != null && widget.movimiento?['comprobante_path'] == null) {
+        await PlanService.ensureCanCreate(PlanResource.receiptsMonthly);
+      }
+
       dynamic movimientoGuardado;
       if (_editando) {
         await supabase
@@ -269,6 +379,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             .eq('id', widget.movimiento!['id']);
         movimientoGuardado = widget.movimiento;
       } else {
+        await PlanService.ensureCanCreate(PlanResource.transactionsMonthly);
         movimientoGuardado = await supabase
             .from('movimientos')
             .insert({...datos, 'usuario_id': userId})
@@ -303,12 +414,13 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
           if (pathAnterior != null && pathAnterior != path) {
             await supabase.storage.from('receipts').remove([pathAnterior]);
           }
-        } catch (_) {
+        } catch (error) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
+              SnackBar(
                 content: Text(
-                  'El movimiento se guardó, pero no se pudo adjuntar el recibo.',
+                  'El movimiento se guardó, pero no se pudo adjuntar el recibo: '
+                  '${PlanService.errorMessage(error)}',
                 ),
               ),
             );
@@ -347,8 +459,11 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo guardar: ${PlanService.errorMessage(e)}'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _cargando = false);
@@ -396,6 +511,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                     children: [
                       // Selector Ingreso / Gasto
                       Row(
+                        key: _tipoKey,
                         children: [
                           Expanded(
                             child: _selectorTipo(
@@ -419,7 +535,9 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       Text('MONTO', style: AppTypography.sectionLabel),
                       const SizedBox(height: 8),
                       MoneyTextFormField(
+                        key: _montoKey,
                         controller: _montoCtrl,
+                        focusNode: _montoFocusNode,
                         style: AppTypography.balanceDisplay.copyWith(
                           fontSize: 28,
                           color: colorActivo,
@@ -473,6 +591,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                               ),
                             )
                           : Wrap(
+                              key: _categoriaKey,
                               spacing: 8,
                               runSpacing: 8,
                               children: _categorias.map((c) {
@@ -547,6 +666,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       Text('FECHA', style: AppTypography.sectionLabel),
                       const SizedBox(height: 8),
                       InkWell(
+                        key: _fechaKey,
                         borderRadius: BorderRadius.circular(AppRadii.xl2),
                         onTap: _elegirFecha,
                         child: Container(
@@ -583,6 +703,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                       const SizedBox(height: 24),
 
                       SizedBox(
+                        key: _guardarKey,
                         height: 56,
                         child: DecoratedBox(
                           decoration: BoxDecoration(
@@ -748,6 +869,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
 
   Widget _campoDescripcionConAutocompletado() {
     return Autocomplete<String>(
+      key: _descripcionKey,
       initialValue: TextEditingValue(
         text: widget.movimiento?['descripcion'] ?? '',
       ),

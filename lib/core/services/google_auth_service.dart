@@ -6,7 +6,7 @@ import '../supabase/supabase_config.dart';
 /// Inicia sesión con la cuenta de Google nativa y crea la sesión en Supabase.
 class GoogleAuthService {
   static const String _webClientId =
-      '599046597329-itedf1mce8lkjisc02i1i63kqklm81pm.apps.googleusercontent.com';
+      '599046597329-amq2biu5fhdf5a9pui6g8rvfiidan5hs.apps.googleusercontent.com';
 
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: _webClientId,

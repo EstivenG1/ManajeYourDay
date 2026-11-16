@@ -8,7 +8,9 @@ class SugerenciasService {
   /// Trae las sugerencias del usuario para un contexto dado, ordenadas
   /// por las más usadas primero.
   static Future<List<String>> obtener(String contexto, {int limite = 20}) async {
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+    final userId = user.id;
     final data = await supabase
         .from('sugerencias_texto')
         .select('valor')
@@ -26,7 +28,9 @@ class SugerenciasService {
     final texto = valor.trim();
     if (texto.isEmpty) return;
 
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+    final userId = user.id;
 
     final existente = await supabase
         .from('sugerencias_texto')

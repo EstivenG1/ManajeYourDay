@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^flutter pub get$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "flutter": true
+    }
+}

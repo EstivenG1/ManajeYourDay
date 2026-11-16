@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/localization/app_text.dart';
 import '../../core/services/guided_tour.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/profile_avatar_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import 'home_tab.dart';
@@ -11,6 +12,8 @@ import '../tareas/tareas_screen.dart';
 import '../reportes/reportes_screen.dart';
 import '../perfil/perfil_screen.dart';
 import '../historial/historial_screen.dart';
+import '../notas/notas_screen.dart';
+import '../mi_yi_di/mi_yi_di_screen.dart';
 
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
@@ -21,11 +24,15 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   int _tabActual = 0;
+  int _planRefreshToken = 0;
+  int _reportesHoyToken = 0;
   Map<String, dynamic>? _perfil;
   final GlobalKey _inicioTourKey = GlobalKey();
   final GlobalKey _finanzasTourKey = GlobalKey();
   final GlobalKey _tareasTourKey = GlobalKey();
   final GlobalKey _reportesTourKey = GlobalKey();
+  final GlobalKey _notasTourKey = GlobalKey();
+  final GlobalKey _miYiDiTourKey = GlobalKey();
   final GlobalKey _perfilTourKey = GlobalKey();
 
   List<String> _titulos(BuildContext context) => [
@@ -33,6 +40,8 @@ class _HomeShellState extends State<HomeShell> {
     appText(context, 'Finanzas', 'Finance'),
     appText(context, 'Tareas', 'Tasks'),
     appText(context, 'Reportes', 'Reports'),
+    appText(context, 'Notas', 'Notes'),
+    'MiYiDi',
   ];
 
   @override
@@ -113,6 +122,28 @@ class _HomeShellState extends State<HomeShell> {
             color: AppColors.amber,
           ),
           TutorialStep(
+            target: _notasTourKey,
+            title: appText(context, 'Tus notas', 'Your notes'),
+            description: appText(
+              context,
+              'Guarda ideas y datos importantes en notas personalizables. Elige un emoji, un color y la vista que prefieras.',
+              'Save ideas and important details in customizable notes. Choose an emoji, a color, and your preferred layout.',
+            ),
+            icon: Icons.sticky_note_2_outlined,
+            color: AppColors.gold,
+          ),
+          TutorialStep(
+            target: _miYiDiTourKey,
+            title: appText(context, 'Conoce a MiYiDi', 'Meet MiYiDi'),
+            description: appText(
+              context,
+              'El chat personal con IA está en proceso de creación. Toca el icono de información para conocer lo que podrás hacer.',
+              'The personal AI chat is being built. Tap the information icon to learn what you will be able to do.',
+            ),
+            icon: Icons.smart_toy_outlined,
+            color: AppColors.green,
+          ),
+          TutorialStep(
             target: _perfilTourKey,
             title: appText(
               context,
@@ -139,20 +170,50 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _cargarPerfil() async {
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final data = Map<String, dynamic>.from(
-        await supabase.from('perfiles').select().eq('id', userId).single(),
+        await supabase
+            .from('perfiles')
+            .select('nombre,correo,avatar_url')
+            .eq('id', userId)
+            .single(),
       );
-      if (data['avatar_url'] != null) {
-        data['avatar_url'] = await supabase.storage
-            .from('avatars')
-            .createSignedUrl('$userId/avatar.jpg', 3600);
-      }
+      data['avatar_url'] = await ProfileAvatarService.resolve(
+        data['avatar_url'] as String?,
+      );
       if (mounted) setState(() => _perfil = data);
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('Unable to load current profile: $error');
+    }
   }
 
   void _irATab(int index) => setState(() => _tabActual = index);
+
+  void _irAReportesHoy() {
+    setState(() {
+      _tabActual = 3;
+      _reportesHoyToken++;
+      _planRefreshToken++;
+    });
+  }
+
+  void _finanzasActivadas() => setState(() => _planRefreshToken++);
+
+  Future<void> _abrirPlanes() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            PerfilScreen(onReplayTour: _repetirTour, soloPlanes: true),
+      ),
+    );
+    if (mounted) {
+      setState(() => _planRefreshToken++);
+      _cargarPerfil();
+    }
+  }
 
   Future<void> _cerrarSesion() async {
     try {
@@ -239,6 +300,28 @@ class _HomeShellState extends State<HomeShell> {
                 },
               ),
               ListTile(
+                leading: Icon(
+                  Icons.workspace_premium_outlined,
+                  color: AppColors.gold,
+                ),
+                title: Text(
+                  appText(context, 'Planes MYD', 'MYD plans'),
+                  style: AppTypography.itemTitle,
+                ),
+                subtitle: Text(
+                  appText(
+                    context,
+                    'Consulta y administra tu plan',
+                    'Review and manage your plan',
+                  ),
+                  style: AppTypography.secondary,
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _abrirPlanes();
+                },
+              ),
+              ListTile(
                 leading: Icon(Icons.history, color: AppColors.gold),
                 title: Text(
                   appText(
@@ -284,10 +367,21 @@ class _HomeShellState extends State<HomeShell> {
         nombre: nombre,
         onVerTareas: () => _irATab(2),
         onVerFinanzas: () => _irATab(1),
+        onVerPlanes: _abrirPlanes,
+        planRefreshToken: _planRefreshToken,
       ),
-      const FinanzasScreen(),
-      const TareasScreen(),
-      const ReportesScreen(),
+      FinanzasScreen(
+        onPrimerIngresoRegistrado: _irAReportesHoy,
+        onFinanzasActivadas: _finanzasActivadas,
+      ),
+      TareasScreen(active: _tabActual == 2),
+      ReportesScreen(
+        hoyToken: _reportesHoyToken,
+        active: _tabActual == 3,
+        onOpenFinanzas: () => _irATab(1),
+      ),
+      NotasScreen(active: _tabActual == 4),
+      const MiYiDiScreen(),
     ];
 
     return Scaffold(
@@ -360,6 +454,21 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.bar_chart_outlined, color: AppColors.textTertiary),
             selectedIcon: Icon(Icons.bar_chart, color: AppColors.gold),
             label: appText(context, 'Reportes', 'Reports'),
+          ),
+          NavigationDestination(
+            key: _notasTourKey,
+            icon: Icon(
+              Icons.sticky_note_2_outlined,
+              color: AppColors.textTertiary,
+            ),
+            selectedIcon: Icon(Icons.sticky_note_2, color: AppColors.gold),
+            label: appText(context, 'Notas', 'Notes'),
+          ),
+          NavigationDestination(
+            key: _miYiDiTourKey,
+            icon: Icon(Icons.smart_toy_outlined, color: AppColors.textTertiary),
+            selectedIcon: Icon(Icons.smart_toy, color: AppColors.gold),
+            label: 'MiYiDi',
           ),
         ],
       ),

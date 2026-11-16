@@ -42,7 +42,10 @@ class _NewUserWelcomeScreenState extends State<NewUserWelcomeScreen> {
                       color: AppColors.surface,
                       borderRadius: BorderRadius.circular(30),
                     ),
-                    child: Image.asset('assets/icon/icon.png'),
+                    child: Semantics(
+                      label: 'Logo de Manage Your Day',
+                      child: Image.asset('assets/icon/icon.png'),
+                    ),
                   ),
                   const SizedBox(height: 22),
                   Text(

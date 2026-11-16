@@ -1,4 +1,4 @@
-package com.example.myd
+package com.manageyourday.app
 
 import io.flutter.embedding.android.FlutterActivity
 

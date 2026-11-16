@@ -9,8 +9,10 @@ import 'package:printing/printing.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../core/services/home_utils.dart';
+import '../../core/services/plan_service.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/localization/app_text.dart';
 
 class ExportarDatosScreen extends StatefulWidget {
   const ExportarDatosScreen({super.key});
@@ -27,6 +29,38 @@ class _ExportarDatosScreenState extends State<ExportarDatosScreen> {
   late DateTime _desde = DateTime(DateTime.now().year, DateTime.now().month, 1);
   late DateTime _hasta = DateTime.now();
   bool _exportando = false;
+  bool _cargandoPlan = true;
+  PlanTier? _plan;
+  Object? _errorPlan;
+
+  @override
+  void initState() {
+    super.initState();
+    _cargarPlan();
+  }
+
+  Future<void> _cargarPlan() async {
+    setState(() {
+      _cargandoPlan = true;
+      _errorPlan = null;
+    });
+    try {
+      final plan = await PlanService.loadCurrentUserPlan();
+      if (mounted) {
+        setState(() {
+          _plan = plan;
+          _cargandoPlan = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorPlan = error;
+          _cargandoPlan = false;
+        });
+      }
+    }
+  }
 
   String _fechaIso(DateTime fecha) =>
       '${fecha.year}-${fecha.month.toString().padLeft(2, '0')}-${fecha.day.toString().padLeft(2, '0')}';
@@ -57,7 +91,14 @@ class _ExportarDatosScreenState extends State<ExportarDatosScreen> {
     })
   >
   _cargarDatos() async {
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+    if (user == null) {
+      return (
+        movimientos: <Map<String, dynamic>>[],
+        tareas: <Map<String, dynamic>>[],
+      );
+    }
+    final userId = user.id;
     final movimientos = <Map<String, dynamic>>[];
     final tareas = <Map<String, dynamic>>[];
     const tamano = 500;
@@ -647,23 +688,58 @@ class _ExportarDatosScreenState extends State<ExportarDatosScreen> {
     );
   }
 
-  Future<void> _exportar(String formato) async {
+  Future<void> _exportar(PlanExportFormat formato) async {
+    if (formato != PlanExportFormat.csv) {
+      final plan = _plan;
+      if (plan == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              _cargandoPlan
+                  ? appText(
+                      context,
+                      'Espera mientras verificamos tu plan.',
+                      'Please wait while we verify your plan.',
+                    )
+                  : appText(
+                      context,
+                      'No se pudo verificar tu plan. Intenta de nuevo.',
+                      'Your plan could not be verified. Please try again.',
+                    ),
+            ),
+          ),
+        );
+        return;
+      }
+      if (!PlanService.canExport(plan, formato)) {
+        final requiredPlan = formato == PlanExportFormat.excel
+            ? PlanTier.standard
+            : PlanTier.premium;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'Esta exportación está disponible desde el plan ${requiredPlan.label}.',
+                'This export is available starting with the ${requiredPlan.label} plan.',
+              ),
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
     setState(() => _exportando = true);
     try {
       final datos = await _cargarDatos();
       switch (formato) {
-        case 'csv':
+        case PlanExportFormat.csv:
           await _compartirCsv(datos.movimientos, datos.tareas);
-        case 'excel':
+        case PlanExportFormat.excel:
           await _compartirExcel(datos.movimientos, datos.tareas);
-        case 'pdf':
+        case PlanExportFormat.pdf:
           await _compartirPdf(datos.movimientos, datos.tareas);
-        default:
-          throw ArgumentError.value(
-            formato,
-            'formato',
-            'Formato no compatible',
-          );
       }
     } catch (error) {
       if (mounted) {
@@ -700,23 +776,87 @@ class _ExportarDatosScreenState extends State<ExportarDatosScreen> {
             'La exportación incluye movimientos registrados y tareas con fecha límite dentro del periodo.',
             style: AppTypography.secondary,
           ),
+          if (_cargandoPlan) ...[
+            const SizedBox(height: 8),
+            Text(
+              appText(context, 'Verificando plan...', 'Verifying plan...'),
+              style: AppTypography.secondary,
+            ),
+          ],
+          if (_plan != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              appText(context, 'Plan actual: ', 'Current plan: ') +
+                  _plan!.label,
+              style: AppTypography.secondary,
+            ),
+          ],
+          if (_errorPlan != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              appText(
+                context,
+                'No se pudo verificar tu plan; las exportaciones de pago permanecerán bloqueadas.',
+                'Your plan could not be verified; paid exports will remain locked.',
+              ),
+              style: AppTypography.secondary.copyWith(color: AppColors.red),
+            ),
+            TextButton(
+              onPressed: _exportando ? null : _cargarPlan,
+              child: Text(appText(context, 'Reintentar', 'Retry')),
+            ),
+          ],
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _exportando ? null : () => _exportar('csv'),
+            onPressed: _exportando
+                ? null
+                : () => _exportar(PlanExportFormat.csv),
             icon: const Icon(Icons.table_chart_outlined),
-            label: const Text('Compartir CSV'),
+            label: Text(
+              appText(context, 'Compartir CSV · Gratis', 'Share CSV · Free'),
+            ),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: _exportando ? null : () => _exportar('excel'),
-            icon: const Icon(Icons.grid_on_outlined),
-            label: const Text('Compartir Excel (.xlsx)'),
+            onPressed: _exportando
+                ? null
+                : () => _exportar(PlanExportFormat.excel),
+            icon: Icon(
+              PlanService.canExport(
+                    _plan ?? PlanTier.free,
+                    PlanExportFormat.excel,
+                  )
+                  ? Icons.grid_on_outlined
+                  : Icons.lock_outline,
+            ),
+            label: Text(
+              appText(
+                context,
+                'Compartir Excel (.xlsx) · Estándar o Premium',
+                'Share Excel (.xlsx) · Standard or Premium',
+              ),
+            ),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: _exportando ? null : () => _exportar('pdf'),
-            icon: const Icon(Icons.picture_as_pdf_outlined),
-            label: const Text('Compartir reporte PDF'),
+            onPressed: _exportando
+                ? null
+                : () => _exportar(PlanExportFormat.pdf),
+            icon: Icon(
+              PlanService.canExport(
+                    _plan ?? PlanTier.free,
+                    PlanExportFormat.pdf,
+                  )
+                  ? Icons.picture_as_pdf_outlined
+                  : Icons.lock_outline,
+            ),
+            label: Text(
+              appText(
+                context,
+                'Compartir reporte PDF · Premium',
+                'Share PDF report · Premium',
+              ),
+            ),
           ),
           if (_exportando) ...[
             const SizedBox(height: 20),

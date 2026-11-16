@@ -29,7 +29,8 @@ enum PlanResource {
   activeBudgets('active_budgets', 'presupuestos activos'),
   activeGoals('active_goals', 'metas activas'),
   activeRecurring('active_recurring', 'recordatorios recurrentes activos'),
-  receiptsMonthly('receipts_monthly', 'recibos adjuntos este mes');
+  receiptsMonthly('receipts_monthly', 'recibos adjuntos este mes'),
+  notesTotal('notes_total', 'notas');
 
   const PlanResource(this.databaseValue, this.label);
 
@@ -60,6 +61,42 @@ class PlanCheckout {
   final int trialDays;
 }
 
+class PlanSubscriptionDetails {
+  const PlanSubscriptionDetails({
+    required this.plan,
+    required this.billingPeriod,
+    required this.status,
+    required this.trialDays,
+    required this.createdAt,
+    this.trialStartedAt,
+    required this.currentPeriodEnd,
+  });
+
+  final PlanTier plan;
+  final PlanBillingPeriod billingPeriod;
+  final String status;
+  final int trialDays;
+  final DateTime createdAt;
+  final DateTime? trialStartedAt;
+  final DateTime? currentPeriodEnd;
+
+  bool get isCheckoutPending => status == 'checkout_pending';
+  bool get isPaymentPending => status == 'pending';
+  bool get isPaymentProcessPending => isCheckoutPending || isPaymentPending;
+  bool get canResumeCheckout => status == 'pending';
+  bool get canContinueCheckout => canResumeCheckout || isCheckoutPending;
+  bool get canCancel =>
+      status == 'pending' ||
+      status == 'authorized' ||
+      status == 'paused' ||
+      (isCheckoutPending && trialDays == 7);
+  DateTime get trialStart => trialStartedAt ?? createdAt;
+  bool get isTrialActive =>
+      trialDays > 0 &&
+      !DateTime.now().isBefore(trialStart) &&
+      DateTime.now().isBefore(trialStart.add(Duration(days: trialDays)));
+}
+
 class PlanLimitException implements Exception {
   const PlanLimitException(this.resource, this.tier);
 
@@ -88,7 +125,100 @@ class PlanService {
     return PlanTier.fromDatabaseValue(value);
   }
 
-  static Future<void> syncCurrentUserSubscription() async {
+  static Future<PlanSubscriptionDetails?> loadCurrentUserSubscription() async {
+    if (supabase.auth.currentUser == null) {
+      throw StateError('A signed-in user is required to load a subscription.');
+    }
+
+    final subscription = await supabase
+        .from('billing_subscriptions')
+        .select(
+          'plan, billing_period, status, trial_days, created_at, trial_started_at, current_period_end',
+        )
+        .inFilter('status', [
+          'checkout_pending',
+          'pending',
+          'authorized',
+          'paused',
+        ])
+        .maybeSingle();
+    if (subscription == null) return null;
+
+    final billingPeriod = switch (subscription['billing_period']) {
+      'monthly' => PlanBillingPeriod.monthly,
+      'annual' => PlanBillingPeriod.annual,
+      _ => throw const FormatException(
+        'The subscription billing period is invalid.',
+      ),
+    };
+    final status = subscription['status'];
+    final trialDays = subscription['trial_days'];
+    final createdAtValue = subscription['created_at'];
+    final trialStartedAtValue = subscription['trial_started_at'];
+    final periodEndValue = subscription['current_period_end'];
+    if (status is! String ||
+        !const {
+          'checkout_pending',
+          'pending',
+          'authorized',
+          'paused',
+        }.contains(status) ||
+        trialDays is! int ||
+        (trialDays != 0 && trialDays != 7) ||
+        createdAtValue is! String ||
+        (trialStartedAtValue != null && trialStartedAtValue is! String) ||
+        (periodEndValue != null && periodEndValue is! String)) {
+      throw const FormatException('The subscription data is invalid.');
+    }
+    if (trialDays == 7 &&
+        (subscription['plan'] != 'premium' ||
+            subscription['billing_period'] != 'monthly')) {
+      throw const FormatException('The Premium trial data is invalid.');
+    }
+    final createdAt = DateTime.tryParse(createdAtValue);
+    final trialStartedAt = trialStartedAtValue == null
+        ? null
+        : DateTime.tryParse(trialStartedAtValue as String);
+    final periodEnd = periodEndValue == null
+        ? null
+        : DateTime.tryParse(periodEndValue as String);
+    if (createdAt == null ||
+        (trialStartedAtValue != null && trialStartedAt == null) ||
+        (periodEndValue != null && periodEnd == null)) {
+      throw const FormatException('The subscription period end is invalid.');
+    }
+
+    return PlanSubscriptionDetails(
+      plan: PlanTier.fromDatabaseValue(subscription['plan']),
+      billingPeriod: billingPeriod,
+      status: status,
+      trialDays: trialDays,
+      createdAt: createdAt,
+      trialStartedAt: trialStartedAt,
+      currentPeriodEnd: periodEnd,
+    );
+  }
+
+  static Future<bool> hasUsedPremiumTrial() async {
+    if (supabase.auth.currentUser == null) {
+      throw StateError(
+        'A signed-in user is required to check trial eligibility.',
+      );
+    }
+
+    final trial = await supabase
+        .from('billing_subscriptions')
+        .select('id')
+        .eq('plan', 'premium')
+        .eq('billing_period', 'monthly')
+        .eq('trial_days', 7)
+        .inFilter('status', ['pending', 'authorized', 'paused', 'cancelled'])
+        .limit(1)
+        .maybeSingle();
+    return trial != null;
+  }
+
+  static Future<bool> syncCurrentUserSubscription() async {
     if (supabase.auth.currentUser == null) {
       throw StateError('A signed-in user is required to sync a subscription.');
     }
@@ -109,6 +239,7 @@ class PlanService {
         }.contains(data['status'])) {
       throw const FormatException('The subscription sync response is invalid.');
     }
+    return data['upgradePromotionAvailable'] == true;
   }
 
   static Future<PlanUpgradeQuote> previewStandardUpgrade() async {
@@ -177,6 +308,23 @@ class PlanService {
     return quote;
   }
 
+  static Future<void> cancelCurrentUserSubscription() async {
+    if (supabase.auth.currentUser == null) {
+      throw StateError(
+        'A signed-in user is required to cancel a subscription.',
+      );
+    }
+
+    final response = await supabase.functions.invoke('cancel-subscription');
+    final data = response.data;
+    if (data is! Map ||
+        data['status'] != 'cancelled' ||
+        data['plan'] is! String ||
+        !const {'standard', 'premium'}.contains(data['plan'])) {
+      throw const FormatException('The cancellation response is invalid.');
+    }
+  }
+
   static int? limitFor(PlanTier tier, PlanResource resource) {
     return switch ((tier, resource)) {
       (PlanTier.free, PlanResource.tasksMonthly) => 50,
@@ -197,6 +345,9 @@ class PlanService {
       (PlanTier.free, PlanResource.receiptsMonthly) => 3,
       (PlanTier.standard, PlanResource.receiptsMonthly) => 30,
       (PlanTier.premium, PlanResource.receiptsMonthly) => 100,
+      (PlanTier.free, PlanResource.notesTotal) => 20,
+      (PlanTier.standard, PlanResource.notesTotal) => 100,
+      (PlanTier.premium, PlanResource.notesTotal) => null,
     };
   }
 
@@ -218,6 +369,11 @@ class PlanService {
     };
   }
 
+  static bool isValidPayerEmail(String? value) {
+    if (value == null) return false;
+    return RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(value.trim());
+  }
+
   static int premiumUpgradeDiscountCopFor(PlanBillingPeriod period) {
     final regularAmount = priceCopFor(PlanTier.premium, period);
     if (regularAmount == null) {
@@ -226,18 +382,34 @@ class PlanService {
     return regularAmount ~/ 2;
   }
 
-  static Future<PlanCheckout> startWebCheckout(
+  static Future<PlanCheckout> startSubscriptionCheckout(
     PlanTier tier,
-    PlanBillingPeriod period,
-  ) async {
+    PlanBillingPeriod period, {
+    String? payerEmail,
+    int trialDays = 0,
+  }) async {
     if (tier == PlanTier.free) {
       throw ArgumentError.value(tier, 'tier', 'Free has no paid checkout.');
+    }
+    if (trialDays != 0 &&
+        !(tier == PlanTier.premium &&
+            period == PlanBillingPeriod.monthly &&
+            trialDays == 7)) {
+      throw ArgumentError.value(trialDays, 'trialDays', 'Unsupported trial.');
+    }
+    if (payerEmail != null && !isValidPayerEmail(payerEmail)) {
+      throw ArgumentError.value(payerEmail, 'payerEmail', 'Invalid email.');
     }
 
     final response = await supabase.functions
         .invoke(
           'start-subscription',
-          body: {'plan': tier.name, 'billingPeriod': period.name},
+          body: {
+            'plan': tier.name,
+            'billingPeriod': period.name,
+            'trialDays': trialDays,
+            if (payerEmail != null) 'payerEmail': payerEmail.trim(),
+          },
         )
         .catchError((Object error) {
           if (error is FunctionException && error.status == 409) {
@@ -248,8 +420,7 @@ class PlanService {
     final data = response.data;
     if (data is! Map ||
         data['checkoutUrl'] is! String ||
-        (data['trialDays'] != 0 && data['trialDays'] != 7) ||
-        (tier != PlanTier.standard && data['trialDays'] != 0)) {
+        data['trialDays'] != trialDays) {
       throw const FormatException('The checkout response is invalid.');
     }
 
@@ -269,6 +440,19 @@ class PlanService {
   static Future<void> ensureCanCreate(PlanResource resource) async {
     if (supabase.auth.currentUser == null) {
       throw StateError('A signed-in user is required to check plan limits.');
+    }
+
+    if (resource == PlanResource.notesTotal) {
+      final allowed = await supabase.rpc('can_create_note');
+      if (allowed is! bool) {
+        throw const FormatException(
+          'The server returned an invalid note capacity result.',
+        );
+      }
+      if (!allowed) {
+        throw PlanLimitException(resource, await loadCurrentUserPlan());
+      }
+      return;
     }
 
     final allowed = await supabase.rpc(

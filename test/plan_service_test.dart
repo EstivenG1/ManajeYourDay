@@ -19,6 +19,98 @@ void main() {
     });
   });
 
+  group('PlanSubscriptionDetails', () {
+    PlanSubscriptionDetails subscriptionWithStatus(String status) =>
+        PlanSubscriptionDetails(
+          plan: PlanTier.standard,
+          billingPeriod: PlanBillingPeriod.monthly,
+          status: status,
+          trialDays: 0,
+          createdAt: DateTime.now(),
+          currentPeriodEnd: null,
+        );
+
+    test('only resumes provider-backed pending checkouts', () {
+      expect(
+        subscriptionWithStatus('checkout_pending').canResumeCheckout,
+        isFalse,
+      );
+      expect(subscriptionWithStatus('pending').canResumeCheckout, isTrue);
+    });
+
+    test('distinguishes a pending payment process from an active plan', () {
+      for (final status in ['checkout_pending', 'pending']) {
+        expect(subscriptionWithStatus(status).isPaymentProcessPending, isTrue);
+      }
+      for (final status in ['authorized', 'paused']) {
+        expect(subscriptionWithStatus(status).isPaymentProcessPending, isFalse);
+      }
+    });
+
+    test('allows retrying a checkout regardless of its creation time', () {
+      final preparing = PlanSubscriptionDetails(
+        plan: PlanTier.standard,
+        billingPeriod: PlanBillingPeriod.monthly,
+        status: 'checkout_pending',
+        trialDays: 0,
+        createdAt: DateTime.now(),
+        currentPeriodEnd: null,
+      );
+      final stale = PlanSubscriptionDetails(
+        plan: PlanTier.standard,
+        billingPeriod: PlanBillingPeriod.monthly,
+        status: 'checkout_pending',
+        trialDays: 0,
+        createdAt: DateTime.now().subtract(const Duration(minutes: 6)),
+        currentPeriodEnd: null,
+      );
+
+      expect(preparing.canContinueCheckout, isTrue);
+      expect(stale.canContinueCheckout, isTrue);
+    });
+
+    test('allows cancellation of pending and active subscriptions', () {
+      for (final status in ['pending', 'authorized', 'paused']) {
+        expect(subscriptionWithStatus(status).canCancel, isTrue);
+      }
+      expect(subscriptionWithStatus('checkout_pending').canCancel, isFalse);
+
+      final pendingPremiumTrial = PlanSubscriptionDetails(
+        plan: PlanTier.premium,
+        billingPeriod: PlanBillingPeriod.monthly,
+        status: 'checkout_pending',
+        trialDays: 7,
+        createdAt: DateTime.now(),
+        currentPeriodEnd: null,
+      );
+      expect(pendingPremiumTrial.canCancel, isTrue);
+    });
+
+    test('recognizes an active Premium trial from its authorization date', () {
+      final trial = PlanSubscriptionDetails(
+        plan: PlanTier.premium,
+        billingPeriod: PlanBillingPeriod.monthly,
+        status: 'authorized',
+        trialDays: 7,
+        createdAt: DateTime.now().subtract(const Duration(days: 10)),
+        trialStartedAt: DateTime.now().subtract(const Duration(days: 1)),
+        currentPeriodEnd: null,
+      );
+      final expiredTrial = PlanSubscriptionDetails(
+        plan: PlanTier.premium,
+        billingPeriod: PlanBillingPeriod.monthly,
+        status: 'authorized',
+        trialDays: 7,
+        createdAt: DateTime.now().subtract(const Duration(days: 10)),
+        trialStartedAt: DateTime.now().subtract(const Duration(days: 8)),
+        currentPeriodEnd: null,
+      );
+
+      expect(trial.isTrialActive, isTrue);
+      expect(expiredTrial.isTrialActive, isFalse);
+    });
+  });
+
   group('PlanService.limitFor', () {
     test('keeps useful free access and increases paid plan capacity', () {
       expect(
@@ -41,6 +133,15 @@ void main() {
       expect(
         PlanService.limitFor(PlanTier.free, PlanResource.receiptsMonthly),
         3,
+      );
+      expect(PlanService.limitFor(PlanTier.free, PlanResource.notesTotal), 20);
+      expect(
+        PlanService.limitFor(PlanTier.standard, PlanResource.notesTotal),
+        100,
+      );
+      expect(
+        PlanService.limitFor(PlanTier.premium, PlanResource.notesTotal),
+        isNull,
       );
 
       expect(
@@ -123,6 +224,19 @@ void main() {
     });
   });
 
+  group('PlanService.isValidPayerEmail', () {
+    test(
+      'accepts a distinct Mercado Pago email and rejects malformed values',
+      () {
+        expect(PlanService.isValidPayerEmail('buyer@example.com'), isTrue);
+        expect(PlanService.isValidPayerEmail('  buyer@example.com  '), isTrue);
+        expect(PlanService.isValidPayerEmail(''), isFalse);
+        expect(PlanService.isValidPayerEmail('not-an-email'), isFalse);
+        expect(PlanService.isValidPayerEmail(null), isFalse);
+      },
+    );
+  });
+
   group('PlanService.premiumUpgradeDiscountCopFor', () {
     test('discounts one Premium billing cycle by exactly 50%', () {
       expect(
@@ -141,6 +255,10 @@ void main() {
       expect(
         PlanService.errorMessage(Exception('PLAN_LIMIT_REACHED:active_goals')),
         contains('metas activas'),
+      );
+      expect(
+        PlanService.errorMessage(Exception('PLAN_LIMIT_REACHED:notes_total')),
+        contains('notas'),
       );
     });
   });

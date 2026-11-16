@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/guided_tour.dart';
+import '../../core/localization/app_text.dart';
 import '../../core/services/notification_service.dart';
 import 'meta_form_screen.dart';
 import 'meta_detalle_screen.dart';
@@ -23,12 +26,34 @@ class _MetasScreenState extends State<MetasScreen> {
   void initState() {
     super.initState();
     _cargar();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _mostrarGuiaInicial());
+  }
+
+  Future<void> _mostrarGuiaInicial() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    final crear = await mostrarGuiaInicial(
+      context: context,
+      storageKey: 'guided_goals_v1_$userId',
+      title: appText(context, 'Metas de ahorro', 'Savings goals'),
+      description: appText(
+        context,
+        'Define cuánto quieres ahorrar y para cuándo. Puedes registrar aportes y seguir el progreso; al crear tu primera meta podrás decidir si conservarla o eliminarla.',
+        'Set a savings target and deadline. Record contributions and track progress; after creating your first goal, you can choose to keep or delete it.',
+      ),
+      startLabel: appText(context, 'Crear una meta', 'Create a goal'),
+    );
+    if (crear && mounted) {
+      await _abrirCrear(mostrarOpcionConservar: true, mostrarGuia: true);
+    }
   }
 
   Future<void> _cargar() async {
     setState(() => _cargando = true);
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final data = await supabase
           .from('metas_ahorro')
           .select()
@@ -47,9 +72,12 @@ class _MetasScreenState extends State<MetasScreen> {
               meta['frecuencia_aporte'] as String? ?? 'mensual',
             );
           }
-          await supabase.from('metas_ahorro').update({
-            'proximo_aporte': proximo.toIso8601String().split('T').first,
-          }).eq('id', meta['id']);
+          await supabase
+              .from('metas_ahorro')
+              .update({
+                'proximo_aporte': proximo.toIso8601String().split('T').first,
+              })
+              .eq('id', meta['id']);
           await NotificationService.programarRecordatorioMeta(
             metaId: meta['id'].toString(),
             nombre: meta['nombre'] as String,
@@ -84,8 +112,11 @@ class _MetasScreenState extends State<MetasScreen> {
     if (frecuencia == 'semanal') return fecha.add(const Duration(days: 7));
     if (frecuencia == 'quincenal') return fecha.add(const Duration(days: 14));
     final primerDiaSiguiente = DateTime(fecha.year, fecha.month + 1, 1);
-    final ultimoDiaSiguiente =
-        DateTime(primerDiaSiguiente.year, primerDiaSiguiente.month + 1, 0);
+    final ultimoDiaSiguiente = DateTime(
+      primerDiaSiguiente.year,
+      primerDiaSiguiente.month + 1,
+      0,
+    );
     return DateTime(
       primerDiaSiguiente.year,
       primerDiaSiguiente.month,
@@ -93,12 +124,63 @@ class _MetasScreenState extends State<MetasScreen> {
     );
   }
 
-  Future<void> _abrirCrear() async {
+  Future<void> _abrirCrear({
+    bool mostrarOpcionConservar = false,
+    bool mostrarGuia = false,
+  }) async {
     final resultado = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const MetaFormScreen()),
+      MaterialPageRoute(
+        builder: (_) => MetaFormScreen(mostrarGuia: mostrarGuia),
+      ),
     );
-    if (resultado == true) _cargar();
+    if (resultado == true) {
+      await _cargar();
+      if (mostrarOpcionConservar && mounted && _metas.isNotEmpty) {
+        await _preguntarConservarMeta(_metas.first);
+      }
+    }
+  }
+
+  Future<void> _preguntarConservarMeta(Map<String, dynamic> meta) async {
+    final conservar = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text(
+          appText(context, '¿Conservar esta meta?', 'Keep this goal?'),
+        ),
+        content: Text(
+          appText(
+            context,
+            'Acabas de crear "${meta['nombre']}". Puedes conservarla para seguir tu progreso o eliminarla.',
+            'You just created "${meta['nombre']}". Keep it to track your progress or delete it.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(appText(context, 'Eliminar meta', 'Delete goal')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(appText(context, 'Conservar', 'Keep')),
+          ),
+        ],
+      ),
+    );
+    if (conservar == false) {
+      try {
+        await supabase.from('metas_ahorro').delete().eq('id', meta['id']);
+        await _cargar();
+      } catch (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('No se pudo eliminar la meta: $error')),
+          );
+        }
+      }
+    }
   }
 
   Future<void> _abrirDetalle(Map<String, dynamic> meta) async {
@@ -112,7 +194,9 @@ class _MetasScreenState extends State<MetasScreen> {
   @override
   Widget build(BuildContext context) {
     final activas = _metas.where((m) => m['estado'] == 'activa').toList();
-    final completadas = _metas.where((m) => m['estado'] == 'completada').toList();
+    final completadas = _metas
+        .where((m) => m['estado'] == 'completada')
+        .toList();
     final totalObjetivo = activas.fold<double>(0, (sum, meta) {
       final valor = meta['monto_objetivo'];
       return sum + ((valor is num) ? valor.toDouble() : 0.0);
@@ -128,22 +212,22 @@ class _MetasScreenState extends State<MetasScreen> {
       body: _cargando
           ? Center(child: CircularProgressIndicator(color: AppColors.gold))
           : _errorCarga != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_errorCarga!, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                          onPressed: _cargar,
-                          child: const Text('Reintentar'),
-                        ),
-                      ],
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_errorCarga!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: _cargar,
+                      child: const Text('Reintentar'),
                     ),
-                  ),
-                )
+                  ],
+                ),
+              ),
+            )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -156,7 +240,11 @@ class _MetasScreenState extends State<MetasScreen> {
                       decoration: BoxDecoration(
                         gradient: AppColors.goldGradient,
                         borderRadius: BorderRadius.circular(AppRadii.xl2),
-                        boxShadow: AppColors.sombraPremium(AppColors.gold, blur: 18, dy: 8),
+                        boxShadow: AppColors.sombraPremium(
+                          AppColors.gold,
+                          blur: 18,
+                          dy: 8,
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -168,7 +256,9 @@ class _MetasScreenState extends State<MetasScreen> {
                               children: [
                                 Text(
                                   'Progreso general',
-                                  style: AppTypography.secondary.copyWith(color: Colors.white70),
+                                  style: AppTypography.secondary.copyWith(
+                                    color: Colors.white70,
+                                  ),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
@@ -194,8 +284,11 @@ class _MetasScreenState extends State<MetasScreen> {
                         children: [
                           const Text('🎯', style: TextStyle(fontSize: 40)),
                           const SizedBox(height: 12),
-                          Text('Aún no tienes metas de ahorro.\nToca + para crear la primera.',
-                              textAlign: TextAlign.center, style: AppTypography.secondary),
+                          Text(
+                            'Aún no tienes metas de ahorro.\nToca + para crear la primera.',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.secondary,
+                          ),
                         ],
                       ),
                     ),
@@ -203,25 +296,36 @@ class _MetasScreenState extends State<MetasScreen> {
                   if (completadas.isNotEmpty) ...[
                     const SizedBox(height: 10),
                     GestureDetector(
-                      onTap: () => setState(() => _mostrarCompletadas = !_mostrarCompletadas),
+                      onTap: () => setState(
+                        () => _mostrarCompletadas = !_mostrarCompletadas,
+                      ),
                       child: Row(
                         children: [
-                          Text('COMPLETADAS (${completadas.length})',
-                              style: AppTypography.sectionLabel),
+                          Text(
+                            'COMPLETADAS (${completadas.length})',
+                            style: AppTypography.sectionLabel,
+                          ),
                           const SizedBox(width: 6),
-                          Icon(_mostrarCompletadas ? Icons.expand_less : Icons.expand_more,
-                              size: 18, color: AppColors.textTertiary),
+                          Icon(
+                            _mostrarCompletadas
+                                ? Icons.expand_less
+                                : Icons.expand_more,
+                            size: 18,
+                            color: AppColors.textTertiary,
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 10),
-                    if (_mostrarCompletadas) ...completadas.map((m) => _tarjetaMeta(m)),
+                    if (_mostrarCompletadas)
+                      ...completadas.map((m) => _tarjetaMeta(m)),
                   ],
                   const SizedBox(height: 12),
                 ],
               ),
             ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'savings-goal-create',
         backgroundColor: AppColors.gold,
         foregroundColor: Colors.white,
         onPressed: _abrirCrear,
@@ -248,22 +352,29 @@ class _MetasScreenState extends State<MetasScreen> {
           color: completada ? AppColors.surface : null,
           borderRadius: BorderRadius.circular(AppRadii.xl2),
           border: completada ? Border.all(color: AppColors.borderSoft) : null,
-          boxShadow: completada ? null : AppColors.sombraPremium(AppColors.gold, blur: 18, dy: 6),
+          boxShadow: completada
+              ? null
+              : AppColors.sombraPremium(AppColors.gold, blur: 18, dy: 6),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Text(meta['icono'] ?? '🎯', style: const TextStyle(fontSize: 20)),
+                Text(
+                  meta['icono'] ?? '🎯',
+                  style: const TextStyle(fontSize: 20),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(meta['nombre'],
-                      style: TextStyle(
-                        color: completada ? AppColors.textPrimary : Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                      )),
+                  child: Text(
+                    meta['nombre'],
+                    style: TextStyle(
+                      color: completada ? AppColors.textPrimary : Colors.white,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
                 if (completada)
                   Icon(Icons.check_circle, color: AppColors.green, size: 18),
@@ -275,7 +386,9 @@ class _MetasScreenState extends State<MetasScreen> {
               child: LinearProgressIndicator(
                 value: pct.toDouble(),
                 minHeight: 9,
-                backgroundColor: completada ? AppColors.borderSoft : Colors.white.withValues(alpha: 0.3),
+                backgroundColor: completada
+                    ? AppColors.borderSoft
+                    : Colors.white.withValues(alpha: 0.3),
                 color: completada ? AppColors.green : Colors.white,
               ),
             ),
@@ -298,8 +411,7 @@ class _MetasScreenState extends State<MetasScreen> {
                           fontSize: 12.5,
                         ),
                       ),
-                      if (((meta['aporte_programado'] as num?)
-                                  ?.toDouble() ??
+                      if (((meta['aporte_programado'] as num?)?.toDouble() ??
                               0) >
                           0) ...[
                         const SizedBox(height: 6),
@@ -317,12 +429,14 @@ class _MetasScreenState extends State<MetasScreen> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text('${(pct * 100).toStringAsFixed(0)}%',
-                    style: TextStyle(
-                      color: completada ? AppColors.textPrimary : Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                    )),
+                Text(
+                  '${(pct * 100).toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    color: completada ? AppColors.textPrimary : Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ),
           ],

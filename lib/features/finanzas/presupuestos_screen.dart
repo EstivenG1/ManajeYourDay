@@ -4,6 +4,10 @@ import '../../core/services/home_utils.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/plan_service.dart';
+import '../../core/services/guided_tour.dart';
+import '../../core/localization/app_text.dart';
+import '../../core/services/finance_repository.dart';
 
 class PresupuestosScreen extends StatefulWidget {
   const PresupuestosScreen({super.key});
@@ -17,11 +21,30 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
   String? _error;
   List<Map<String, dynamic>> _presupuestos = [];
   Map<String, double> _gastos = {};
+  final FinanceRepository _financeRepository = FinanceRepository(supabase);
 
   @override
   void initState() {
     super.initState();
     _cargar();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _mostrarGuiaInicial());
+  }
+
+  Future<void> _mostrarGuiaInicial() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    final crear = await mostrarGuiaInicial(
+      context: context,
+      storageKey: 'guided_budgets_v1_$userId',
+      title: appText(context, 'Gestiona presupuestos', 'Manage budgets'),
+      description: appText(
+        context,
+        'Un presupuesto fija un límite de gasto para una categoría durante un periodo. MYD compara tus movimientos con ese límite para ayudarte a mantener el control.',
+        'A budget sets a spending limit for a category over a period. MYD compares your transactions with that limit to help you stay on track.',
+      ),
+      startLabel: appText(context, 'Crear presupuesto', 'Create budget'),
+    );
+    if (crear && mounted) await _editar(mostrarGuia: true);
   }
 
   Future<void> _cargar() async {
@@ -30,37 +53,16 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
       _error = null;
     });
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final rows = await supabase
           .from('presupuestos')
           .select('*, categorias(nombre)')
           .eq('usuario_id', userId)
           .order('fecha_inicio', ascending: false);
       final presupuestos = List<Map<String, dynamic>>.from(rows);
-      final gastos = <String, double>{};
-      for (final presupuesto in presupuestos) {
-        var total = 0.0;
-        const tamanoPagina = 500;
-        for (var inicio = 0;; inicio += tamanoPagina) {
-          final movimientos = await supabase
-              .from('movimientos')
-              .select('monto')
-              .eq('usuario_id', userId)
-              .eq('categoria_id', presupuesto['categoria_id'])
-              .eq('tipo', 'gasto')
-              .gte('fecha', presupuesto['fecha_inicio'])
-              .lte('fecha', presupuesto['fecha_fin'])
-              .order('id')
-              .range(inicio, inicio + tamanoPagina - 1);
-          total += (movimientos as List).fold<double>(
-            0,
-            (subtotal, movimiento) =>
-                subtotal + (movimiento['monto'] as num).toDouble(),
-          );
-          if (movimientos.length < tamanoPagina) break;
-        }
-        gastos[presupuesto['id'].toString()] = total;
-      }
+      final gastos = await _financeRepository.loadBudgetSpending();
       if (!mounted) return;
       setState(() {
         _presupuestos = presupuestos;
@@ -76,12 +78,18 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
     }
   }
 
-  Future<void> _editar({Map<String, dynamic>? presupuesto}) async {
+  Future<void> _editar({
+    Map<String, dynamic>? presupuesto,
+    bool mostrarGuia = false,
+  }) async {
     final guardado = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
-      builder: (_) => _PresupuestoForm(presupuesto: presupuesto),
+      builder: (_) => _PresupuestoForm(
+        presupuesto: presupuesto,
+        mostrarGuia: presupuesto == null && mostrarGuia,
+      ),
     );
     if (guardado == true) _cargar();
   }
@@ -112,9 +120,9 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
       _cargar();
     } catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo eliminar: $error')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('No se pudo eliminar: $error')));
       }
     }
   }
@@ -124,6 +132,7 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Presupuestos')),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'budget-create',
         backgroundColor: AppColors.gold,
         foregroundColor: Colors.white,
         onPressed: () => _editar(),
@@ -132,51 +141,51 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
       body: _cargando
           ? Center(child: CircularProgressIndicator(color: AppColors.gold))
           : _error != null
-              ? _errorView()
-              : RefreshIndicator(
-                  onRefresh: _cargar,
-                  child: _presupuestos.isEmpty
-                      ? ListView(
-                          children: [
-                            const SizedBox(height: 120),
-                            Center(
-                              child: Text(
-                                'Aún no tienes presupuestos.\nCrea uno para controlar tus gastos.',
-                                textAlign: TextAlign.center,
-                                style: AppTypography.secondary,
-                              ),
-                            ),
-                          ],
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
-                          itemCount: _presupuestos.length,
-                          itemBuilder: (context, index) {
-                            final item = _presupuestos[index];
-                            return _tarjeta(item);
-                          },
+          ? _errorView()
+          : RefreshIndicator(
+              onRefresh: _cargar,
+              child: _presupuestos.isEmpty
+                  ? ListView(
+                      children: [
+                        const SizedBox(height: 120),
+                        Center(
+                          child: Text(
+                            'Aún no tienes presupuestos.\nCrea uno para controlar tus gastos.',
+                            textAlign: TextAlign.center,
+                            style: AppTypography.secondary,
+                          ),
                         ),
-                ),
+                      ],
+                    )
+                  : ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
+                      itemCount: _presupuestos.length,
+                      itemBuilder: (context, index) {
+                        final item = _presupuestos[index];
+                        return _tarjeta(item);
+                      },
+                    ),
+            ),
     );
   }
 
   Widget _errorView() => Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: _cargar,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Reintentar'),
-              ),
-            ],
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(_error!, textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _cargar,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Reintentar'),
           ),
-        ),
-      );
+        ],
+      ),
+    ),
+  );
 
   Widget _tarjeta(Map<String, dynamic> presupuesto) {
     final limite = (presupuesto['monto_limite'] as num).toDouble();
@@ -238,9 +247,10 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
 }
 
 class _PresupuestoForm extends StatefulWidget {
-  const _PresupuestoForm({this.presupuesto});
+  const _PresupuestoForm({this.presupuesto, this.mostrarGuia = false});
 
   final Map<String, dynamic>? presupuesto;
+  final bool mostrarGuia;
 
   @override
   State<_PresupuestoForm> createState() => _PresupuestoFormState();
@@ -249,12 +259,19 @@ class _PresupuestoForm extends StatefulWidget {
 class _PresupuestoFormState extends State<_PresupuestoForm> {
   final _formKey = GlobalKey<FormState>();
   final _monto = TextEditingController();
+  final _categoriaKey = GlobalKey();
+  final _montoKey = GlobalKey();
+  final _inicioKey = GlobalKey();
+  final _finKey = GlobalKey();
+  final _guardarKey = GlobalKey();
+  final _montoFocusNode = FocusNode();
   List<Map<String, dynamic>> _categorias = [];
   int? _categoria;
   late DateTime _inicio;
   late DateTime _fin;
   bool _cargando = true;
   bool _guardando = false;
+  bool _guiaIniciada = false;
 
   @override
   void initState() {
@@ -268,19 +285,24 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
         : DateTime.parse(widget.presupuesto!['fecha_fin']);
     _categoria = widget.presupuesto?['categoria_id'] as int?;
     final montoInicial = widget.presupuesto?['monto_limite'];
-    if (montoInicial is num) _monto.text = formatearMontoParaCampo(montoInicial);
+    if (montoInicial is num) {
+      _monto.text = formatearMontoParaCampo(montoInicial);
+    }
     _cargarCategorias();
   }
 
   @override
   void dispose() {
     _monto.dispose();
+    _montoFocusNode.dispose();
     super.dispose();
   }
 
   Future<void> _cargarCategorias() async {
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final data = await supabase
           .from('categorias')
           .select('id, nombre')
@@ -290,10 +312,12 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
       if (!mounted) return;
       setState(() {
         _categorias = List<Map<String, dynamic>>.from(data);
-        _categoria ??=
-            _categorias.isEmpty ? null : _categorias.first['id'] as int;
+        _categoria ??= _categorias.isEmpty
+            ? null
+            : _categorias.first['id'] as int;
         _cargando = false;
       });
+      _programarGuia();
     } catch (error) {
       if (!mounted) return;
       setState(() => _cargando = false);
@@ -301,6 +325,82 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
         SnackBar(content: Text('No se pudieron cargar las categorías: $error')),
       );
     }
+  }
+
+  void _programarGuia() {
+    if (!widget.mostrarGuia || _guiaIniciada || _categorias.isEmpty) return;
+    _guiaIniciada = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _mostrarGuiaFormulario();
+    });
+  }
+
+  Future<void> _mostrarGuiaFormulario() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    await mostrarTourGuiado(
+      context: context,
+      storageKey: 'guided_budget_form_v1_$userId',
+      force: true,
+      steps: [
+        TutorialStep(
+          title: appText(context, 'Elige una categoría', 'Choose a category'),
+          description: appText(
+            context,
+            'Selecciona la categoría de gastos que quieres controlar.',
+            'Choose the spending category you want to track.',
+          ),
+          icon: Icons.category_outlined,
+          color: AppColors.gold,
+          target: _categoriaKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Define el límite', 'Set the limit'),
+          description: appText(
+            context,
+            'Escribe cuánto quieres permitirte gastar en esta categoría.',
+            'Enter how much you want to allow spending in this category.',
+          ),
+          icon: Icons.payments_outlined,
+          color: AppColors.gold,
+          target: _montoKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Inicio del periodo', 'Period start'),
+          description: appText(
+            context,
+            'Elige desde qué día se contará este presupuesto.',
+            'Choose the day this budget period starts.',
+          ),
+          icon: Icons.calendar_today_outlined,
+          color: AppColors.gold,
+          target: _inicioKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Fin del periodo', 'Period end'),
+          description: appText(
+            context,
+            'Elige hasta qué día estará vigente el límite.',
+            'Choose the last day the spending limit will apply.',
+          ),
+          icon: Icons.event_outlined,
+          color: AppColors.gold,
+          target: _finKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Guarda el presupuesto', 'Save the budget'),
+          description: appText(
+            context,
+            'MYD comparará tus gastos de la categoría con este límite.',
+            'MYD will compare your spending in this category with this limit.',
+          ),
+          icon: Icons.check_circle_outline,
+          color: AppColors.gold,
+          target: _guardarKey,
+          nextLabel: appText(context, 'Terminar guía', 'Finish guide'),
+        ),
+      ],
+    );
   }
 
   Future<void> _seleccionarFecha({required bool inicio}) async {
@@ -326,7 +426,9 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
     if (!_formKey.currentState!.validate() || _categoria == null) return;
     setState(() => _guardando = true);
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       var solapados = supabase
           .from('presupuestos')
           .select('id')
@@ -358,6 +460,7 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
         'fecha_fin': _fechaIso(_fin),
       };
       if (widget.presupuesto == null) {
+        await PlanService.ensureCanCreate(PlanResource.activeBudgets);
         await supabase.from('presupuestos').insert(datos);
       } else {
         await supabase
@@ -369,7 +472,11 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
     } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo guardar: $error')),
+          SnackBar(
+            content: Text(
+              'No se pudo guardar: ${PlanService.errorMessage(error)}',
+            ),
+          ),
         );
       }
     } finally {
@@ -407,21 +514,29 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
                       ),
                       const SizedBox(height: 16),
                       DropdownButtonFormField<int>(
+                        key: _categoriaKey,
                         initialValue: _categoria,
-                        decoration: const InputDecoration(labelText: 'Categoría'),
+                        decoration: const InputDecoration(
+                          labelText: 'Categoría',
+                        ),
                         items: _categorias
-                            .map((item) => DropdownMenuItem(
-                                  value: item['id'] as int,
-                                  child: Text(item['nombre'] as String),
-                                ))
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item['id'] as int,
+                                child: Text(item['nombre'] as String),
+                              ),
+                            )
                             .toList(),
-                        onChanged: (value) => setState(() => _categoria = value),
+                        onChanged: (value) =>
+                            setState(() => _categoria = value),
                         validator: (value) =>
                             value == null ? 'Selecciona una categoría' : null,
                       ),
                       const SizedBox(height: 12),
                       MoneyTextFormField(
+                        key: _montoKey,
                         controller: _monto,
+                        focusNode: _montoFocusNode,
                         decoration: const InputDecoration(
                           labelText: 'Límite de gasto',
                         ),
@@ -434,17 +549,20 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
                       ),
                       const SizedBox(height: 12),
                       OutlinedButton.icon(
+                        key: _inicioKey,
                         onPressed: () => _seleccionarFecha(inicio: true),
                         icon: const Icon(Icons.calendar_today),
                         label: Text('Desde ${_fechaIso(_inicio)}'),
                       ),
                       OutlinedButton.icon(
+                        key: _finKey,
                         onPressed: () => _seleccionarFecha(inicio: false),
                         icon: const Icon(Icons.event),
                         label: Text('Hasta ${_fechaIso(_fin)}'),
                       ),
                       const SizedBox(height: 16),
                       FilledButton(
+                        key: _guardarKey,
                         onPressed: _guardando ? null : _guardar,
                         child: Text(_guardando ? 'Guardando…' : 'Guardar'),
                       ),

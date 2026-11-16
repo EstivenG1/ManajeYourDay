@@ -4,35 +4,209 @@ import 'package:flutter/material.dart';
 import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/guided_tour.dart';
 import '../../core/services/reportes_service.dart';
+import '../../core/supabase/supabase_config.dart';
 import 'exportar_datos_screen.dart';
 
 class ReportesScreen extends StatefulWidget {
-  const ReportesScreen({super.key});
+  const ReportesScreen({
+    super.key,
+    this.hoyToken = 0,
+    this.active = false,
+    this.onOpenFinanzas,
+  });
+
+  final int hoyToken;
+  final bool active;
+  final VoidCallback? onOpenFinanzas;
 
   @override
   State<ReportesScreen> createState() => _ReportesScreenState();
 }
 
 class _ReportesScreenState extends State<ReportesScreen> {
-  PeriodoReporte _periodo = PeriodoReporte.semana;
+  PeriodoReporte _periodo = PeriodoReporte.hoy;
   ReporteData? _datos;
   bool _cargando = true;
+  bool? _finanzasActivas;
   String? _errorCarga;
 
   @override
   void initState() {
     super.initState();
-    _cargar();
+    if (widget.active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _cargar();
+        _mostrarGuiaInicial();
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ReportesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.hoyToken != widget.hoyToken) {
+      setState(() => _periodo = PeriodoReporte.hoy);
+      _cargar();
+    } else if (!oldWidget.active && widget.active) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _cargar();
+        _mostrarGuiaInicial();
+      });
+    }
+  }
+
+  Widget _guiaPeriodoItem({
+    required IconData icon,
+    required String titulo,
+    required String descripcion,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.goldSoftBg,
+              borderRadius: BorderRadius.circular(AppRadii.xl),
+            ),
+            child: Icon(icon, color: AppColors.goldDeep, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(titulo, style: AppTypography.itemTitle),
+                const SizedBox(height: 4),
+                Text(descripcion, style: AppTypography.secondary),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mostrarGuiaInicial() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    await mostrarGuiaInicial(
+      context: context,
+      storageKey: 'guided_reports_v1_$userId',
+      title: appText(context, 'Conoce tus reportes', 'Explore your reports'),
+      description: appText(
+        context,
+        'Hoy resume tus ingresos, gastos, movimientos y tareas del día. Semana compara tu balance y productividad durante la semana. Mes muestra tendencias, categorías de gasto, actividad, presupuestos y metas de ahorro.',
+        'Today summarizes your income, expenses, transactions, and tasks for the day. Week compares your balance and productivity across the week. Month shows trends, spending categories, activity, budgets, and savings goals.',
+      ),
+      startLabel: appText(context, 'Entendido', 'Got it'),
+    );
+  }
+
+  Future<void> _mostrarGuiaReportes() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(Icons.insights_rounded, color: AppColors.goldDeep),
+        title: Text(
+          appText(
+            context,
+            'Cómo leer tus reportes',
+            'How to read your reports',
+          ),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _guiaPeriodoItem(
+                icon: Icons.today_rounded,
+                titulo: appText(context, 'Hoy', 'Today'),
+                descripcion: appText(
+                  context,
+                  'Consulta ingresos y gastos de hoy, los movimientos registrados y tus tareas del día.',
+                  'Review today’s income and expenses, recorded transactions, and tasks for the day.',
+                ),
+              ),
+              _guiaPeriodoItem(
+                icon: Icons.date_range_rounded,
+                titulo: appText(context, 'Semana', 'Week'),
+                descripcion: appText(
+                  context,
+                  'Revisa tu balance, productividad, gastos por categoría y las tendencias de los últimos siete días.',
+                  'Review your balance, productivity, spending by category, and trends across the last seven days.',
+                ),
+              ),
+              _guiaPeriodoItem(
+                icon: Icons.calendar_month_rounded,
+                titulo: appText(context, 'Mes', 'Month'),
+                descripcion: appText(
+                  context,
+                  'Explora el mapa de actividad del mes, presupuestos, metas de ahorro y conclusiones de tu progreso.',
+                  'Explore the monthly activity map, budgets, savings goals, and insights about your progress.',
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                appText(
+                  context,
+                  'Usa Exportar para guardar una copia de tus datos.',
+                  'Use Export to save a copy of your data.',
+                ),
+                style: AppTypography.secondary,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(appText(context, 'Entendido', 'Got it')),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _cargar() async {
-    setState(() => _cargando = true);
+    final english = Localizations.localeOf(context).languageCode == 'en';
+    setState(() {
+      _cargando = true;
+      _errorCarga = null;
+    });
     try {
-      final datos = await ReportesService.cargar(
-        _periodo,
-        english: Localizations.localeOf(context).languageCode == 'en',
-      );
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        throw StateError('A signed-in user is required to load reports.');
+      }
+      final profile = await supabase
+          .from('perfiles')
+          .select('finanzas_activas')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (profile == null) {
+        throw StateError('The signed-in user profile is missing.');
+      }
+      if (profile['finanzas_activas'] != true) {
+        if (mounted) {
+          setState(() {
+            _finanzasActivas = false;
+            _datos = null;
+            _errorCarga = null;
+          });
+        }
+        return;
+      }
+      if (mounted) setState(() => _finanzasActivas = true);
+      final datos = await ReportesService.cargar(_periodo, english: english);
       if (mounted) {
         setState(() {
           _datos = datos;
@@ -64,12 +238,36 @@ class _ReportesScreenState extends State<ReportesScreen> {
     final tema = Theme.of(context).extension<ReportesTheme>()!;
     final datos = _datos;
 
+    if (!_cargando && _finanzasActivas == false) {
+      return _estadoFinanzasDesactivadas();
+    }
+
     return RefreshIndicator(
       color: AppColors.gold,
       onRefresh: _cargar,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  appText(
+                    context,
+                    'Tu actividad, de un vistazo',
+                    'Your activity at a glance',
+                  ),
+                  style: AppTypography.itemTitle,
+                ),
+              ),
+              IconButton(
+                tooltip: appText(context, 'Guía de reportes', 'Reports guide'),
+                onPressed: _mostrarGuiaReportes,
+                icon: const Icon(Icons.info_outline_rounded),
+                color: AppColors.goldDeep,
+              ),
+            ],
+          ),
           _selectorPeriodo(),
           if (datos != null) ...[
             const SizedBox(height: 16),
@@ -118,7 +316,9 @@ class _ReportesScreenState extends State<ReportesScreen> {
                           Text(_errorCarga!, textAlign: TextAlign.center),
                           TextButton(
                             onPressed: _cargar,
-                            child: Text(appText(context, 'Reintentar', 'Retry')),
+                            child: Text(
+                              appText(context, 'Reintentar', 'Retry'),
+                            ),
                           ),
                         ],
                       ),
@@ -131,6 +331,66 @@ class _ReportesScreenState extends State<ReportesScreen> {
               ..._contenidoPeriodo(datos, tema),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _estadoFinanzasDesactivadas() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.xl3),
+            border: Border.all(color: AppColors.borderSoft),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.bar_chart_rounded,
+                color: AppColors.goldDeep,
+                size: 44,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                appText(
+                  context,
+                  'Activa Finanzas para ver tus reportes',
+                  'Enable Finance to view your reports',
+                ),
+                style: AppTypography.screenTitle,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                appText(
+                  context,
+                  'Los reportes muestran tus ingresos, gastos y tendencias. Si prefieres usar MYD solo para tus tareas, puedes dejar Finanzas desactivada.',
+                  'Reports show your income, expenses, and trends. If you prefer to use MYD only for tasks, you can leave Finance disabled.',
+                ),
+                style: AppTypography.secondary,
+                textAlign: TextAlign.center,
+              ),
+              if (widget.onOpenFinanzas != null) ...[
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: widget.onOpenFinanzas,
+                    icon: const Icon(Icons.account_balance_wallet_outlined),
+                    label: Text(
+                      appText(context, 'Ir a Finanzas', 'Open Finance'),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -154,7 +414,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(appText(context, 'COMPARATIVO', 'COMPARISON'), style: AppTypography.sectionLabel),
+          Text(
+            appText(context, 'COMPARATIVO', 'COMPARISON'),
+            style: AppTypography.sectionLabel,
+          ),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -255,10 +518,7 @@ class _ReportesScreenState extends State<ReportesScreen> {
       children: [
         boton(appText(context, 'Hoy', 'Today'), PeriodoReporte.hoy),
         boton(appText(context, 'Semana', 'Week'), PeriodoReporte.semana),
-        boton(
-          appText(context, 'Mes', 'Month'),
-          PeriodoReporte.mes,
-        ),
+        boton(appText(context, 'Mes', 'Month'), PeriodoReporte.mes),
       ],
     );
   }
@@ -290,12 +550,19 @@ class _ReportesScreenState extends State<ReportesScreen> {
         ],
       ),
       const SizedBox(height: 20),
-      Text(appText(context, 'MOVIMIENTOS DE HOY', 'TODAY’S TRANSACTIONS'), style: AppTypography.sectionLabel),
+      Text(
+        appText(context, 'MOVIMIENTOS DE HOY', 'TODAY’S TRANSACTIONS'),
+        style: AppTypography.sectionLabel,
+      ),
       const SizedBox(height: 10),
       if (d.movimientosDeHoy.isEmpty)
         _tarjeta(
           child: Text(
-            appText(context, 'Aún no registras movimientos hoy.', 'You have no transactions today yet.'),
+            appText(
+              context,
+              'Aún no registras movimientos hoy.',
+              'You have no transactions today yet.',
+            ),
             style: AppTypography.secondary,
           ),
         )
@@ -334,12 +601,19 @@ class _ReportesScreenState extends State<ReportesScreen> {
           ),
         ),
       const SizedBox(height: 20),
-      Text(appText(context, 'TAREAS DE HOY', 'TODAY’S TASKS'), style: AppTypography.sectionLabel),
+      Text(
+        appText(context, 'TAREAS DE HOY', 'TODAY’S TASKS'),
+        style: AppTypography.sectionLabel,
+      ),
       const SizedBox(height: 10),
       if (d.tareasDeHoy.isEmpty)
         _tarjeta(
           child: Text(
-            appText(context, 'No tienes tareas programadas para hoy.', 'You have no tasks scheduled for today.'),
+            appText(
+              context,
+              'No tienes tareas programadas para hoy.',
+              'You have no tasks scheduled for today.',
+            ),
             style: AppTypography.secondary,
           ),
         )
@@ -383,25 +657,38 @@ class _ReportesScreenState extends State<ReportesScreen> {
       _filaKpisSecundarios(d),
       const SizedBox(height: 24),
 
-      Text(appText(context, 'INGRESOS VS GASTOS', 'INCOME VS EXPENSES'), style: AppTypography.sectionLabel),
+      Text(
+        appText(context, 'INGRESOS VS GASTOS', 'INCOME VS EXPENSES'),
+        style: AppTypography.sectionLabel,
+      ),
       const SizedBox(height: 12),
       _tarjeta(child: _graficaBarras(d)),
       const SizedBox(height: 24),
 
-      Text(appText(context, 'TENDENCIA DEL BALANCE', 'BALANCE TREND'), style: AppTypography.sectionLabel),
+      Text(
+        appText(context, 'TENDENCIA DEL BALANCE', 'BALANCE TREND'),
+        style: AppTypography.sectionLabel,
+      ),
       const SizedBox(height: 12),
       _tarjeta(child: _graficaLinea(d)),
       const SizedBox(height: 24),
 
       if (d.gastosPorCategoria.isNotEmpty) ...[
-        Text(appText(context, 'GASTOS POR CATEGORÍA', 'EXPENSES BY CATEGORY'), style: AppTypography.sectionLabel),
+        Text(
+          appText(context, 'GASTOS POR CATEGORÍA', 'EXPENSES BY CATEGORY'),
+          style: AppTypography.sectionLabel,
+        ),
         const SizedBox(height: 12),
         _tarjeta(child: _graficaDona(d, tema)),
         const SizedBox(height: 24),
       ],
 
       Text(
-        appText(context, 'CUMPLIMIENTO DE TAREAS POR PRIORIDAD', 'TASK COMPLETION BY PRIORITY'),
+        appText(
+          context,
+          'CUMPLIMIENTO DE TAREAS POR PRIORIDAD',
+          'TASK COMPLETION BY PRIORITY',
+        ),
         style: AppTypography.sectionLabel,
       ),
       const SizedBox(height: 12),
@@ -409,14 +696,20 @@ class _ReportesScreenState extends State<ReportesScreen> {
       const SizedBox(height: 24),
 
       if (_periodo == PeriodoReporte.mes) ...[
-        Text(appText(context, 'MAPA DE CALOR DE ACTIVIDAD', 'ACTIVITY HEATMAP'), style: AppTypography.sectionLabel),
+        Text(
+          appText(context, 'MAPA DE CALOR DE ACTIVIDAD', 'ACTIVITY HEATMAP'),
+          style: AppTypography.sectionLabel,
+        ),
         const SizedBox(height: 12),
         _tarjeta(child: _mapaCalor(d)),
         const SizedBox(height: 24),
       ],
 
       if (d.presupuestos.isNotEmpty) ...[
-        Text(appText(context, 'PRESUPUESTOS', 'BUDGETS'), style: AppTypography.sectionLabel),
+        Text(
+          appText(context, 'PRESUPUESTOS', 'BUDGETS'),
+          style: AppTypography.sectionLabel,
+        ),
         const SizedBox(height: 12),
         _tarjeta(
           child: Column(
@@ -437,7 +730,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
       ],
 
       if (d.metas.isNotEmpty) ...[
-        Text(appText(context, 'METAS DE AHORRO', 'SAVINGS GOALS'), style: AppTypography.sectionLabel),
+        Text(
+          appText(context, 'METAS DE AHORRO', 'SAVINGS GOALS'),
+          style: AppTypography.sectionLabel,
+        ),
         const SizedBox(height: 12),
         _tarjeta(
           child: Column(
@@ -458,7 +754,10 @@ class _ReportesScreenState extends State<ReportesScreen> {
         const SizedBox(height: 24),
       ],
 
-      Text(appText(context, 'CONCLUSIONES', 'INSIGHTS'), style: AppTypography.sectionLabel),
+      Text(
+        appText(context, 'CONCLUSIONES', 'INSIGHTS'),
+        style: AppTypography.sectionLabel,
+      ),
       const SizedBox(height: 12),
       _tarjeta(
         color: AppColors.goldSoftBg,
@@ -534,9 +833,19 @@ class _ReportesScreenState extends State<ReportesScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        Expanded(child: _kpiChico(appText(context, 'Mayor gasto', 'Top expense'), d.categoriaTop ?? '—')),
+        Expanded(
+          child: _kpiChico(
+            appText(context, 'Mayor gasto', 'Top expense'),
+            d.categoriaTop ?? '—',
+          ),
+        ),
         const SizedBox(width: 8),
-        Expanded(child: _kpiChico(appText(context, 'Vencidas', 'Overdue'), '${d.tareasVencidas}')),
+        Expanded(
+          child: _kpiChico(
+            appText(context, 'Vencidas', 'Overdue'),
+            '${d.tareasVencidas}',
+          ),
+        ),
       ],
     );
   }
@@ -589,7 +898,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _graficaBarras(ReporteData d) {
     if (d.etiquetasSerie.isEmpty) {
       return Text(
-        appText(context, 'Sin datos suficientes para graficar.', 'Not enough data to build this chart.'),
+        appText(
+          context,
+          'Sin datos suficientes para graficar.',
+          'Not enough data to build this chart.',
+        ),
         style: AppTypography.secondary,
       );
     }
@@ -659,7 +972,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
   Widget _graficaLinea(ReporteData d) {
     if (d.balanceAcumulado.isEmpty) {
       return Text(
-        appText(context, 'Sin datos suficientes para graficar.', 'Not enough data to build this chart.'),
+        appText(
+          context,
+          'Sin datos suficientes para graficar.',
+          'Not enough data to build this chart.',
+        ),
         style: AppTypography.secondary,
       );
     }
@@ -919,7 +1236,11 @@ class _ReportesScreenState extends State<ReportesScreen> {
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                appText(context, '⚠️ Superaste el límite de este presupuesto', '⚠️ You exceeded this budget limit'),
+                appText(
+                  context,
+                  '⚠️ Superaste el límite de este presupuesto',
+                  '⚠️ You exceeded this budget limit',
+                ),
                 style: TextStyle(color: colorAlerta, fontSize: 11),
               ),
             ),

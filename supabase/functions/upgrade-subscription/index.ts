@@ -1,4 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { isTestUpgradePromotionEnabled } from "../_shared/mercadopago_config.ts";
+import type {
+  BillingClient,
+  BillingDatabase,
+  ProviderSubscriptionStatus,
+} from "../_shared/billing_database.ts";
 
 type ProviderSubscription = {
   id?: unknown;
@@ -38,7 +44,7 @@ function corsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
-function providerStatus(value: unknown): string | null {
+function providerStatus(value: unknown): ProviderSubscriptionStatus | null {
   switch (value) {
     case "pending":
     case "authorized":
@@ -75,11 +81,19 @@ Deno.serve(async (request: Request) => {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const accessToken = Deno.env.get("MERCADOPAGO_ACCESS_TOKEN");
   const paymentEnvironment = Deno.env.get("MERCADOPAGO_ENVIRONMENT");
+  const upgradePromotionSetting = Deno.env.get(
+    "MERCADOPAGO_TEST_UPGRADE_PROMOTION_ENABLED",
+  );
   if (!url || !anonKey || !serviceRoleKey || !accessToken) {
     console.error("upgrade-subscription: required server configuration is missing");
     return jsonResponse({ error: "Upgrade is not configured" }, 503, origin);
   }
-  if (paymentEnvironment !== "test") {
+  if (
+    !isTestUpgradePromotionEnabled(
+      paymentEnvironment,
+      upgradePromotionSetting,
+    )
+  ) {
     return jsonResponse(
       { error: "The upgrade promotion is available only in the test environment" },
       403,
@@ -87,7 +101,7 @@ Deno.serve(async (request: Request) => {
     );
   }
 
-  const userClient = createClient(url, anonKey, {
+  const userClient = createClient<BillingDatabase>(url, anonKey, {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -96,7 +110,7 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Authentication required" }, 401, origin);
   }
 
-  const adminClient = createClient(url, serviceRoleKey, {
+  const adminClient = createClient<BillingDatabase>(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: current, error: lookupError } = await adminClient
@@ -114,11 +128,17 @@ Deno.serve(async (request: Request) => {
     });
     return jsonResponse({ error: "Could not read current subscription" }, 500, origin);
   }
-  const periodEnd = current?.current_period_end === null
+  if (!current) {
+    return jsonResponse(
+      { error: "An active Standard subscription is required for this offer" },
+      409,
+      origin,
+    );
+  }
+  const periodEnd = current.current_period_end === null
     ? null
-    : new Date(current?.current_period_end).getTime();
+    : new Date(current.current_period_end).getTime();
   if (
-    !current ||
     current.plan !== "standard" ||
     current.status !== "authorized" ||
     !current.provider_subscription_id ||
@@ -335,7 +355,7 @@ Deno.serve(async (request: Request) => {
 });
 
 async function finalizeUpgrade(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: BillingClient,
   subscriptionId: string,
   userId: string,
   discountedAmount: number,
@@ -377,7 +397,7 @@ async function finalizeUpgrade(
 }
 
 async function releaseReservation(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: BillingClient,
   subscriptionId: string,
   userId: string,
 ): Promise<void> {

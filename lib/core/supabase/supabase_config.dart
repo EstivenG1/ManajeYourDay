@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Configuración de conexión a Supabase.
@@ -9,8 +10,35 @@ class SupabaseConfig {
   static const String supabasePublishableKey =
       'sb_publishable_qCKguGUejGoZfwpDYOvo9w_y03nJYb0';
 
+  static const String mercadoPagoPublicKey =
+      'APP_USR-472b9ada-02ad-4c71-b45d-8d3595d7e780';
+
   static const String passwordRecoveryRedirect =
       'io.supabase.myd://reset-password';
+
+  static const String authCallbackRedirect = 'io.supabase.myd://auth-callback';
+
+  static String passwordRecoveryRedirectFor({
+    required bool isWeb,
+    required Uri currentUri,
+  }) {
+    if (!isWeb) return passwordRecoveryRedirect;
+    return '${currentUri.origin}${currentUri.path}';
+  }
+
+  static String authCallbackRedirectFor({
+    required bool isWeb,
+    required Uri currentUri,
+  }) {
+    if (!isWeb) return authCallbackRedirect;
+    return '${currentUri.origin}${currentUri.path}';
+  }
+
+  static String get currentPasswordRecoveryRedirect =>
+      passwordRecoveryRedirectFor(isWeb: kIsWeb, currentUri: Uri.base);
+
+  static String get currentAuthCallbackRedirect =>
+      authCallbackRedirectFor(isWeb: kIsWeb, currentUri: Uri.base);
 
   static bool _passwordRecoveryRedirectReceived = false;
 

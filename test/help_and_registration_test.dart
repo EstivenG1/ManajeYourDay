@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myd/core/theme/app_theme.dart';
-import 'package:myd/features/auth/auth_screen.dart';
-import 'package:myd/features/legal/centro_ayuda_screen.dart';
-import 'package:myd/features/legal/legal_info_screen.dart';
+import 'package:manage_your_day/core/theme/app_theme.dart';
+import 'package:manage_your_day/features/auth/auth_screen.dart';
+import 'package:manage_your_day/features/legal/centro_ayuda_screen.dart';
+import 'package:manage_your_day/features/legal/legal_info_screen.dart';
 
 Widget _app(Widget home) {
   return MaterialApp(

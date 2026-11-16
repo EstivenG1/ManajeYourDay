@@ -44,12 +44,15 @@ class _TransactionReceiptViewState extends State<TransactionReceiptView> {
               padding: EdgeInsets.all(18),
               child: Center(child: CircularProgressIndicator()),
             )
-          : Image.network(
-              _url!,
-              fit: BoxFit.cover,
-              errorBuilder: (_, _, _) => const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('No se pudo cargar el recibo.'),
+          : Semantics(
+              label: 'Recibo de transacción',
+              child: Image.network(
+                _url!,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('No se pudo cargar el recibo.'),
+                ),
               ),
             ),
     );

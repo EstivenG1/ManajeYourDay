@@ -10,12 +10,14 @@ import '../../core/supabase/supabase_config.dart';
 import '../../core/settings/app_settings.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/plan_service.dart';
+import '../../core/services/profile_avatar_service.dart';
 import '../legal/centro_ayuda_screen.dart';
 
 class PerfilScreen extends StatefulWidget {
   final Future<void> Function()? onReplayTour;
+  final bool soloPlanes;
 
-  const PerfilScreen({super.key, this.onReplayTour});
+  const PerfilScreen({super.key, this.onReplayTour, this.soloPlanes = false});
 
   @override
   State<PerfilScreen> createState() => _PerfilScreenState();
@@ -32,6 +34,9 @@ String? _textoMetadata(Map<String, dynamic> metadata, String key) {
 
 class _PerfilScreenState extends State<PerfilScreen>
     with WidgetsBindingObserver {
+  bool get _supportsMercadoPagoCheckout =>
+      kIsWeb || defaultTargetPlatform == TargetPlatform.android;
+
   final _nombreCtrl = TextEditingController();
   final _apellidoCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
@@ -44,6 +49,7 @@ class _PerfilScreenState extends State<PerfilScreen>
   bool _altoContraste = AppSettings.instance.highContrast;
 
   String? _avatarUrl;
+  String? _portadaUrl;
   String? _correo;
   String? _errorCarga;
   double _escalaTexto = 1;
@@ -51,10 +57,14 @@ class _PerfilScreenState extends State<PerfilScreen>
   bool _cargando = true;
   bool _guardando = false;
   bool _subiendoFoto = false;
+  bool _subiendoPortada = false;
   bool _cargandoPlan = true;
   bool _actualizandoPlan = false;
   bool _iniciandoCheckout = false;
+  bool _hasUsedPremiumTrial = false;
+  bool _upgradePromotionAvailable = false;
   PlanTier? _plan;
+  PlanSubscriptionDetails? _suscripcion;
   PlanBillingPeriod _periodoSeleccionado = PlanBillingPeriod.monthly;
   String? _errorPlan;
   String? _errorSincronizacionPlan;
@@ -78,7 +88,9 @@ class _PerfilScreenState extends State<PerfilScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _cargarPerfil();
+    if (!widget.soloPlanes) {
+      _cargarPerfil();
+    }
     _cargarPlan();
   }
 
@@ -98,9 +110,11 @@ class _PerfilScreenState extends State<PerfilScreen>
       _errorSincronizacionPlan = null;
     });
     String? syncError;
+    var upgradePromotionAvailable = false;
     try {
       try {
-        await PlanService.syncCurrentUserSubscription();
+        upgradePromotionAvailable =
+            await PlanService.syncCurrentUserSubscription();
       } catch (error) {
         debugPrint('Unable to sync Mercado Pago subscription: $error');
         if (!mounted) return;
@@ -112,9 +126,14 @@ class _PerfilScreenState extends State<PerfilScreen>
       }
       if (!mounted) return;
       final plan = await PlanService.loadCurrentUserPlan();
+      final subscription = await PlanService.loadCurrentUserSubscription();
+      final hasUsedPremiumTrial = await PlanService.hasUsedPremiumTrial();
       if (!mounted) return;
       setState(() {
         _plan = plan;
+        _suscripcion = subscription;
+        _hasUsedPremiumTrial = hasUsedPremiumTrial;
+        _upgradePromotionAvailable = upgradePromotionAvailable;
         _cargandoPlan = false;
         _errorSincronizacionPlan = syncError;
       });
@@ -129,99 +148,71 @@ class _PerfilScreenState extends State<PerfilScreen>
     }
   }
 
-  Future<void> _iniciarCheckout(PlanTier plan, PlanBillingPeriod period) async {
+  Future<void> _iniciarCheckout(
+    PlanTier plan,
+    PlanBillingPeriod period, {
+    int trialDays = 0,
+  }) async {
     setState(() => _iniciandoCheckout = true);
     try {
-      final checkout = await PlanService.startWebCheckout(plan, period);
+      final checkout = await PlanService.startSubscriptionCheckout(
+        plan,
+        period,
+        trialDays: trialDays,
+      );
+      if (!mounted) {
+        await PlanService.cancelCurrentUserSubscription();
+        return;
+      }
+      bool didLaunch;
+      try {
+        didLaunch = await launchUrl(
+          checkout.checkoutUri,
+          mode: LaunchMode.externalApplication,
+        );
+      } catch (error) {
+        debugPrint('Unable to open Mercado Pago checkout: $error');
+        await _cerrarCheckoutNoAbierto();
+        rethrow;
+      }
       if (!mounted) return;
-      final trialNotice = checkout.trialDays == 7
-          ? appText(
-              context,
-              'En este entorno de prueba tienes 7 días gratis; después se cobrará ${_formatearPrecioCop(PlanService.priceCopFor(plan, period)!)} COP por ${period == PlanBillingPeriod.monthly ? 'mes' : 'año'}. No se cobrarán los \$100 COP adicionales.',
-              'In this test environment, you get 7 days free; afterward, ${_formatearPrecioCop(PlanService.priceCopFor(plan, period)!)} COP will be charged per ${period == PlanBillingPeriod.monthly ? 'month' : 'year'}. No additional COP 100 fee will be charged.',
-            )
-          : '';
-      final opened = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(
-            appText(context, 'Continuar al pago', 'Continue to payment'),
+      if (!didLaunch) {
+        await _cerrarCheckoutNoAbierto();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'No se pudo abrir Mercado Pago. Puedes volver a intentarlo.',
+                'Could not open Mercado Pago. You can try again.',
+              ),
+            ),
           ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
           content: Text(
             appText(
               context,
-              [
-                if (trialNotice.isNotEmpty) trialNotice,
-                'Mercado Pago abrirá el pago seguro. El plan se activa cuando Supabase confirme la suscripción; volver a esta pantalla no confirma un pago.',
-              ].join(' '),
-              [
-                if (trialNotice.isNotEmpty) trialNotice,
-                'Mercado Pago will open the secure checkout. Your plan activates after Supabase confirms the subscription; returning to this screen does not confirm payment.',
-              ].join(' '),
+              'Al terminar o volver de Mercado Pago, actualiza tu plan. Puedes reabrir el checkout si aún no finalizas.',
+              'After finishing or returning from Mercado Pago, refresh your plan. You can reopen checkout if you have not completed it.',
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(appText(context, 'Cancelar', 'Cancel')),
-            ),
-            FilledButton(
-              onPressed: () async {
-                try {
-                  final didLaunch = await launchUrl(
-                    checkout.checkoutUri,
-                    mode: LaunchMode.externalApplication,
-                  );
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, didLaunch);
-                  }
-                } catch (error) {
-                  debugPrint('Unable to open Mercado Pago checkout: $error');
-                  if (dialogContext.mounted) {
-                    Navigator.pop(dialogContext, false);
-                  }
-                }
-              },
-              child: Text(
-                appText(context, 'Abrir Mercado Pago', 'Open Mercado Pago'),
-              ),
-            ),
-          ],
         ),
       );
-      if (opened == true && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              appText(
-                context,
-                'Al finalizar, vuelve aquí y actualiza el plan.',
-                'After checkout, return here and refresh the plan.',
-              ),
-            ),
-          ),
-        );
-      } else if (opened == false && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              appText(
-                context,
-                'No se pudo abrir Mercado Pago.',
-                'Could not open Mercado Pago.',
-              ),
-            ),
-          ),
-        );
-      }
     } catch (error) {
       debugPrint('Unable to initiate subscription checkout: $error');
       if (mounted) {
+        await _cargarPlan();
+        if (!mounted) return;
         final message = error is PlanCheckoutConflictException
             ? appText(
                 context,
-                'Hay un pago o una suscripción pendiente. Actualiza el plan o elige el mismo plan para continuar el pago.',
-                'A payment or subscription is pending. Refresh your plan or choose the same plan to continue checkout.',
+                'Este checkout ya existe. Ya puedes reabrirlo desde el estado de tu plan.',
+                'This checkout already exists. You can reopen it from your plan status.',
               )
             : appText(
                 context,
@@ -230,6 +221,393 @@ class _PerfilScreenState extends State<PerfilScreen>
               );
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text(message)));
+      }
+    } finally {
+      if (mounted) setState(() => _iniciandoCheckout = false);
+    }
+  }
+
+  Future<void> _cerrarCheckoutNoAbierto() async {
+    try {
+      await PlanService.cancelCurrentUserSubscription();
+      await _cargarPlan();
+    } catch (error) {
+      debugPrint('Unable to close checkout that did not open: $error');
+    }
+  }
+
+  Future<void> _mostrarInformacionPlan(PlanTier tier) async {
+    final title = appText(
+      context,
+      'Guía del plan ${tier.label}',
+      '${tier.label} plan guide',
+    );
+    final description = switch (tier) {
+      PlanTier.free => appText(
+        context,
+        'Para organizar tus finanzas y tareas sin pagar. Incluye las herramientas esenciales y límites para empezar.',
+        'Organize your finances and tasks for free. Includes essential tools with starter limits.',
+      ),
+      PlanTier.standard => appText(
+        context,
+        'Para usar MYD con más capacidad y guardar tus reportes en Excel.',
+        'For using MYD with more capacity and saving reports to Excel.',
+      ),
+      PlanTier.premium => appText(
+        context,
+        'Para aprovechar MYD al máximo: sin límites de plan en tareas, movimientos y elementos activos, con exportación PDF.',
+        'For getting the most out of MYD: no plan limits on tasks, transactions, and active items, plus PDF export.',
+      ),
+    };
+    final benefits = switch (tier) {
+      PlanTier.free => [
+        appText(context, '50 tareas nuevas por mes', '50 new tasks per month'),
+        appText(
+          context,
+          '100 movimientos nuevos por mes',
+          '100 new transactions per month',
+        ),
+        appText(context, '2 presupuestos activos', '2 active budgets'),
+        appText(context, '2 metas activas', '2 active goals'),
+        appText(
+          context,
+          '3 recordatorios financieros activos',
+          '3 active financial reminders',
+        ),
+        appText(context, '3 recibos por mes', '3 receipts per month'),
+        appText(
+          context,
+          'Reportes diarios, semanales y mensuales; exportación CSV.',
+          'Daily, weekly, and monthly reports; CSV export.',
+        ),
+      ],
+      PlanTier.standard => [
+        appText(
+          context,
+          '500 tareas nuevas por mes',
+          '500 new tasks per month',
+        ),
+        appText(
+          context,
+          '1.000 movimientos nuevos por mes',
+          '1,000 new transactions per month',
+        ),
+        appText(context, '10 presupuestos activos', '10 active budgets'),
+        appText(context, '10 metas activas', '10 active goals'),
+        appText(
+          context,
+          '25 recordatorios financieros activos',
+          '25 active financial reminders',
+        ),
+        appText(context, '30 recibos por mes', '30 receipts per month'),
+        appText(
+          context,
+          'Reportes y exportación CSV y Excel.',
+          'Reports and CSV and Excel export.',
+        ),
+      ],
+      PlanTier.premium => [
+        appText(
+          context,
+          'Tareas sin límite de plan',
+          'Tasks with no plan limit',
+        ),
+        appText(
+          context,
+          'Movimientos sin límite de plan',
+          'Transactions with no plan limit',
+        ),
+        appText(
+          context,
+          'Presupuestos, metas y recordatorios activos sin límite de plan',
+          'Active budgets, goals, and reminders with no plan limit',
+        ),
+        appText(context, '100 recibos por mes', '100 receipts per month'),
+        appText(
+          context,
+          'Reportes y exportación CSV, Excel y PDF.',
+          'Reports and CSV, Excel, and PDF export.',
+        ),
+      ],
+    };
+    final guidance = appText(
+      context,
+      'Los topes mensuales se cuentan según la fecha de creación o carga; los presupuestos, metas y recordatorios cuentan solo los elementos activos. Al cambiar a un plan menor no se borran tus datos, pero podrías tener que reducir elementos activos para crear otros.',
+      'Monthly limits count items by their creation or upload date; budgets, goals, and reminders count only active items. Downgrading does not delete your data, but you may need to reduce active items before creating more.',
+    );
+    final price = PlanService.priceCopFor(tier, _periodoSeleccionado);
+    final billingInterval = appText(
+      context,
+      _periodoSeleccionado == PlanBillingPeriod.monthly ? 'mes' : 'año',
+      _periodoSeleccionado == PlanBillingPeriod.monthly ? 'month' : 'year',
+    );
+    final priceDescription = price == null
+        ? appText(context, 'Gratis', 'Free')
+        : '\$${_formatearPrecioCop(price)} COP / $billingInterval';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                priceDescription,
+                style: AppTypography.itemTitle.copyWith(color: AppColors.gold),
+              ),
+              const SizedBox(height: 8),
+              Text(description, style: AppTypography.secondary),
+              const SizedBox(height: 16),
+              Text(
+                appText(context, 'Qué incluye', 'What is included'),
+                style: AppTypography.itemTitle,
+              ),
+              const SizedBox(height: 8),
+              ...benefits.map(
+                (benefit) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.check_circle_outline,
+                        size: 18,
+                        color: AppColors.gold,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(benefit, style: AppTypography.secondary),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                appText(
+                  context,
+                  'Cómo se cuentan los límites',
+                  'How limits work',
+                ),
+                style: AppTypography.itemTitle,
+              ),
+              const SizedBox(height: 6),
+              Text(guidance, style: AppTypography.secondary),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(appText(context, 'Cerrar', 'Close')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _mostrarGuiaGeneralPlanes() async {
+    Widget opcion({
+      required IconData icon,
+      required String titulo,
+      required String descripcion,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: AppColors.goldDeep),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titulo, style: AppTypography.itemTitle),
+                  const SizedBox(height: 3),
+                  Text(descripcion, style: AppTypography.secondary),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(Icons.workspace_premium_outlined, color: AppColors.goldDeep),
+        title: Text(appText(context, 'Guía de Planes MYD', 'MYD plans guide')),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                appText(
+                  context,
+                  'Elige según el espacio y las herramientas que necesitas:',
+                  'Choose based on the capacity and tools you need:',
+                ),
+                style: AppTypography.secondary,
+              ),
+              const SizedBox(height: 18),
+              opcion(
+                icon: Icons.eco_outlined,
+                titulo: appText(context, 'Gratis', 'Free'),
+                descripcion: appText(
+                  context,
+                  'Herramientas esenciales para organizar tareas y finanzas, con exportación CSV.',
+                  'Essential tools for organizing tasks and finances, with CSV export.',
+                ),
+              ),
+              opcion(
+                icon: Icons.star_outline_rounded,
+                titulo: appText(context, 'Estándar', 'Standard'),
+                descripcion: appText(
+                  context,
+                  'Más capacidad para tus registros y exportación de reportes a Excel.',
+                  'More capacity for your records and report export to Excel.',
+                ),
+              ),
+              opcion(
+                icon: Icons.workspace_premium_rounded,
+                titulo: 'Premium',
+                descripcion: appText(
+                  context,
+                  'Mayor capacidad y exportación de reportes a PDF.',
+                  'Higher capacity and report export to PDF.',
+                ),
+              ),
+              Text(
+                appText(
+                  context,
+                  'Toca el icono de información de cada plan para consultar sus límites y beneficios. Si cambias a un plan menor, tus datos se conservan; los límites solo pueden restringir la creación de elementos nuevos.',
+                  'Tap a plan’s information icon to review its limits and benefits. If you downgrade, your data is kept; limits may only restrict creating new items.',
+                ),
+                style: AppTypography.secondary,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text(appText(context, 'Entendido', 'Got it')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _continuarCheckout() async {
+    final subscription = _suscripcion;
+    if (subscription == null || !subscription.canContinueCheckout) return;
+    await _iniciarCheckout(
+      subscription.plan,
+      subscription.billingPeriod,
+      trialDays: subscription.trialDays,
+    );
+  }
+
+  Future<void> _cancelarSuscripcion() async {
+    final subscription = _suscripcion;
+    if (subscription == null || !subscription.canCancel) return;
+    final isPaymentProcessPending = subscription.isPaymentProcessPending;
+    final isTrial = subscription.isTrialActive;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          isPaymentProcessPending
+              ? appText(
+                  context,
+                  'Cancelar proceso de pago',
+                  'Cancel payment process',
+                )
+              : isTrial
+              ? appText(context, 'Cancelar prueba gratis', 'Cancel free trial')
+              : appText(context, 'Cancelar plan', 'Cancel plan'),
+        ),
+        content: Text(
+          appText(
+            context,
+            isPaymentProcessPending
+                ? 'Se cancelará el proceso de pago pendiente del plan ${subscription.plan.label}. Si Mercado Pago sigue abierto, no completes ese proceso. Tu cuenta permanecerá en el plan Gratis.'
+                : isTrial
+                ? 'Se cancelará tu prueba gratis de Premium y perderás sus beneficios de inmediato. Tu cuenta volverá al plan Gratis y se detendrá el cobro futuro programado.'
+                : 'Se cancelará tu plan ${subscription.plan.label} y perderás sus beneficios de inmediato. Tu cuenta volverá al plan Gratis y se detendrán los cobros futuros.',
+            isPaymentProcessPending
+                ? 'The pending payment process for ${subscription.plan.label} will be canceled. If Mercado Pago is still open, do not complete it. Your account will remain on the Free plan.'
+                : isTrial
+                ? 'Your Premium free trial will be canceled and you will immediately lose its benefits. Your account will return to the Free plan and the scheduled future charge will stop.'
+                : 'Your ${subscription.plan.label} plan will be canceled and you will immediately lose its benefits. Your account will return to the Free plan and future charges will stop.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(appText(context, 'Conservar plan', 'Keep plan')),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: AppColors.red),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(
+              isPaymentProcessPending
+                  ? appText(context, 'Cancelar proceso', 'Cancel process')
+                  : isTrial
+                  ? appText(context, 'Cancelar prueba', 'Cancel trial')
+                  : appText(context, 'Cancelar plan', 'Cancel plan'),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _iniciandoCheckout = true);
+    try {
+      await PlanService.cancelCurrentUserSubscription();
+      await _cargarPlan();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            appText(
+              context,
+              isPaymentProcessPending
+                  ? 'Proceso de pago cancelado. Tu cuenta permanece en el plan Gratis.'
+                  : isTrial
+                  ? 'Prueba gratis cancelada. Tu cuenta volvió al plan Gratis.'
+                  : 'Plan cancelado. Tu cuenta volvió al plan Gratis.',
+              isPaymentProcessPending
+                  ? 'Payment process canceled. Your account remains on the Free plan.'
+                  : isTrial
+                  ? 'Free trial canceled. Your account returned to the Free plan.'
+                  : 'Plan canceled. Your account returned to the Free plan.',
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      debugPrint('Unable to cancel subscription: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'No se pudo confirmar la cancelación. Actualiza el estado antes de volver a intentarlo y no inicies otro pago.',
+                'Cancellation could not be confirmed. Refresh its status before trying again, and do not start another payment.',
+              ),
+            ),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _iniciandoCheckout = false);
@@ -329,7 +707,9 @@ class _PerfilScreenState extends State<PerfilScreen>
 
       final data = await supabase
           .from('perfiles')
-          .select()
+          .select(
+            'nombre,apellido,telefono,ciudad,pais,moneda,idioma,avatar_url,correo',
+          )
           .eq('id', userId)
           .maybeSingle();
 
@@ -357,12 +737,17 @@ class _PerfilScreenState extends State<PerfilScreen>
       _moneda = data?['moneda'] as String? ?? AppSettings.instance.currency;
       _idioma = data?['idioma'] as String? ?? AppSettings.instance.language;
 
-      final avatarRegistrado = data?['avatar_url'] as String?;
-      _avatarUrl = avatarRegistrado == null
-          ? null
-          : await supabase.storage
-                .from('avatars')
-                .createSignedUrl('$userId/avatar.jpg', 3600);
+      _avatarUrl = await ProfileAvatarService.resolve(
+        data?['avatar_url'] as String?,
+      );
+      final imagenesPerfil = await supabase.storage
+          .from('avatars')
+          .list(path: userId);
+      if (imagenesPerfil.any((imagen) => imagen.name == 'cover.jpg')) {
+        _portadaUrl = await ProfileAvatarService.resolve('$userId/cover.jpg');
+      } else {
+        _portadaUrl = null;
+      }
       _correo = data?['correo'] as String? ?? user.email;
 
       _escalaTexto = AppSettings.instance.textScale;
@@ -486,6 +871,67 @@ class _PerfilScreenState extends State<PerfilScreen>
     }
   }
 
+  Future<void> _cambiarPortada() async {
+    final archivo = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 1800,
+      maxHeight: 1200,
+    );
+    if (archivo == null || !mounted) return;
+
+    setState(() => _subiendoPortada = true);
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        throw StateError('No hay una sesión de usuario activa.');
+      }
+      final ruta = '${user.id}/cover.jpg';
+      await supabase.storage
+          .from('avatars')
+          .uploadBinary(
+            ruta,
+            await archivo.readAsBytes(),
+            fileOptions: const FileOptions(
+              upsert: true,
+              contentType: 'image/jpeg',
+            ),
+          );
+      final url = await supabase.storage
+          .from('avatars')
+          .createSignedUrl(ruta, 3600);
+      if (!mounted) return;
+      setState(() => _portadaUrl = url);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            appText(
+              context,
+              'Foto de portada actualizada.',
+              'Cover photo updated.',
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              appText(
+                context,
+                'No se pudo actualizar la portada: $error',
+                'Could not update the cover photo: $error',
+              ),
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _subiendoPortada = false);
+    }
+  }
+
   // ============================================================
   // GUARDAR PERFIL
   // ============================================================
@@ -496,6 +942,7 @@ class _PerfilScreenState extends State<PerfilScreen>
     });
 
     try {
+      final idiomaAnterior = AppSettings.instance.language;
       final user = supabase.auth.currentUser;
 
       if (user == null) {
@@ -508,11 +955,29 @@ class _PerfilScreenState extends State<PerfilScreen>
             _datosPerfilParaGuardar(user, avatarUrl: _avatarUrl),
             onConflict: 'id',
           );
+      await AppSettings.instance.setRegionalPreferences(
+        currency: _moneda,
+        language: _idioma,
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Perfil actualizado ✅')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              idiomaAnterior != _idioma
+                  ? appText(
+                      context,
+                      'Idioma guardado. Cierra y vuelve a abrir MYD para aplicar el cambio.',
+                      'Language saved. Close and reopen MYD to apply the change.',
+                    )
+                  : appText(
+                      context,
+                      'Perfil actualizado ✅',
+                      'Profile updated ✅',
+                    ),
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -622,6 +1087,87 @@ class _PerfilScreenState extends State<PerfilScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (widget.soloPlanes) {
+      return Scaffold(
+        backgroundColor: AppColors.bgPrimary,
+        appBar: AppBar(
+          title: Text(appText(context, 'Planes MYD', 'MYD plans')),
+          actions: [
+            IconButton(
+              tooltip: appText(context, 'Guía de planes', 'Plans guide'),
+              onPressed: _mostrarGuiaGeneralPlanes,
+              icon: const Icon(Icons.info_outline_rounded),
+            ),
+          ],
+        ),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(18),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.goldGradient,
+                    borderRadius: BorderRadius.circular(AppRadii.xl2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        appText(
+                          context,
+                          'Elige el plan que va contigo',
+                          'Choose the plan that fits you',
+                        ),
+                        style: AppTypography.screenTitle.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        appText(
+                          context,
+                          'Compara beneficios, revisa los límites y encuentra el nivel ideal para organizar tu día.',
+                          'Compare benefits, review limits, and find the right level to organize your day.',
+                        ),
+                        style: AppTypography.secondary.copyWith(
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _mostrarGuiaGeneralPlanes,
+                  icon: const Icon(Icons.menu_book_rounded),
+                  label: Text(
+                    appText(
+                      context,
+                      'Guía de planes y beneficios',
+                      'Plans and benefits guide',
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.goldDeep,
+                    side: BorderSide(color: AppColors.gold),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 14,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _tarjetaPlan(),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     if (_cargando) {
       return Scaffold(
         backgroundColor: AppColors.bgPrimary,
@@ -653,63 +1199,105 @@ class _PerfilScreenState extends State<PerfilScreen>
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Center(child: _avatar()),
+                    _encabezadoPerfil(),
 
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 16),
 
-                    Center(
-                      child: Text(
-                        _correo ?? '',
-                        style: AppTypography.secondary,
-                      ),
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    Text(
-                      appText(
-                        context,
-                        'Consulta el nivel y los límites de tu cuenta.',
-                        'See your account plan and limits.',
-                      ),
-                      textAlign: TextAlign.center,
-                      style: AppTypography.secondary,
-                    ),
-
-                    const SizedBox(height: 12),
-                    _tarjetaPlan(),
-                    const SizedBox(height: 28),
-
-                    _seccionTitulo(
-                      appText(context, 'DATOS PERSONALES', 'PERSONAL DETAILS'),
-                    ),
-
-                    Row(
-                      children: [
-                        Expanded(child: _campo('Nombre', _nombreCtrl)),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _campo('Apellido (opcional)', _apellidoCtrl),
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: ExpansionTile(
+                        leading: Icon(
+                          Icons.manage_accounts_outlined,
+                          color: AppColors.goldDeep,
                         ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    _campo(
-                      'Teléfono',
-                      _telefonoCtrl,
-                      tipoTeclado: TextInputType.phone,
-                    ),
-
-                    const SizedBox(height: 14),
-
-                    Row(
-                      children: [
-                        Expanded(child: _campo('Ciudad', _ciudadCtrl)),
-                        const SizedBox(width: 12),
-                        Expanded(child: _campo('País', _paisCtrl)),
-                      ],
+                        title: Text(
+                          appText(context, 'Datos de usuario', 'User details'),
+                          style: AppTypography.itemTitle,
+                        ),
+                        subtitle: Text(
+                          appText(
+                            context,
+                            'Consulta y edita tu información personal',
+                            'View and edit your personal information',
+                          ),
+                          style: AppTypography.secondary,
+                        ),
+                        childrenPadding: const EdgeInsets.fromLTRB(
+                          16,
+                          0,
+                          16,
+                          16,
+                        ),
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _campo(
+                                  appText(context, 'Nombre', 'First name'),
+                                  _nombreCtrl,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _campo(
+                                  appText(
+                                    context,
+                                    'Apellido (opcional)',
+                                    'Last name (optional)',
+                                  ),
+                                  _apellidoCtrl,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          _campo(
+                            appText(context, 'Teléfono', 'Phone'),
+                            _telefonoCtrl,
+                            tipoTeclado: TextInputType.phone,
+                          ),
+                          const SizedBox(height: 14),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _campo(
+                                  appText(context, 'Ciudad', 'City'),
+                                  _ciudadCtrl,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _campo(
+                                  appText(context, 'País', 'Country'),
+                                  _paisCtrl,
+                                ),
+                              ),
+                            ],
+                          ),
+                          if ((_correo ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              leading: Icon(
+                                Icons.alternate_email_rounded,
+                                color: AppColors.textSecondary,
+                              ),
+                              title: Text(
+                                appText(
+                                  context,
+                                  'Correo electrónico',
+                                  'Email address',
+                                ),
+                                style: AppTypography.secondary,
+                              ),
+                              subtitle: Text(
+                                _correo!,
+                                style: AppTypography.itemTitle,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
 
                     const SizedBox(height: 24),
@@ -758,6 +1346,16 @@ class _PerfilScreenState extends State<PerfilScreen>
                         const SizedBox(width: 12),
                         Expanded(child: _selectorIdioma()),
                       ],
+                    ),
+
+                    const SizedBox(height: 6),
+                    Text(
+                      appText(
+                        context,
+                        'El cambio de idioma se aplicará cuando cierres y vuelvas a abrir MYD.',
+                        'The language change will apply after you close and reopen MYD.',
+                      ),
+                      style: AppTypography.secondary.copyWith(fontSize: 11),
                     ),
 
                     const SizedBox(height: 18),
@@ -813,14 +1411,33 @@ class _PerfilScreenState extends State<PerfilScreen>
                       ),
                       value: AppSettings.instance.notificationsEnabled,
                       onChanged: (value) async {
-                        await AppSettings.instance.setNotificationsEnabled(
-                          value,
-                        );
                         try {
                           if (value) {
-                            await NotificationService.solicitarPermisos();
+                            final granted =
+                                await NotificationService.solicitarPermisos();
+                            if (!granted) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    appText(
+                                      context,
+                                      'Activa el permiso de notificaciones en la configuración del dispositivo para recibir recordatorios.',
+                                      'Enable notification permission in your device settings to receive reminders.',
+                                    ),
+                                  ),
+                                ),
+                              );
+                              return;
+                            }
+                            await AppSettings.instance.setNotificationsEnabled(
+                              true,
+                            );
                             await NotificationService.restaurarRecordatorios();
                           } else {
+                            await AppSettings.instance.setNotificationsEnabled(
+                              false,
+                            );
                             await NotificationService.cancelarTodas();
                           }
                         } catch (_) {
@@ -933,6 +1550,14 @@ class _PerfilScreenState extends State<PerfilScreen>
 
   Widget _tarjetaPlan() {
     final plan = _plan;
+    final subscription = _suscripcion;
+    final isTrialActive = subscription?.isTrialActive ?? false;
+    final planColor = switch (plan) {
+      PlanTier.free => AppColors.green,
+      PlanTier.standard => AppColors.goldDeep,
+      PlanTier.premium => const Color(0xFF7C3AED),
+      null => AppColors.gold,
+    };
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -957,7 +1582,9 @@ class _PerfilScreenState extends State<PerfilScreen>
                       const SizedBox(width: 8),
                       Text(
                         '${appText(context, 'Plan actual', 'Current plan')}: ${plan!.label}',
-                        style: AppTypography.itemTitle,
+                        style: AppTypography.itemTitle.copyWith(
+                          color: planColor,
+                        ),
                       ),
                     ],
                   ),
@@ -967,6 +1594,135 @@ class _PerfilScreenState extends State<PerfilScreen>
                       child: Text(
                         _errorSincronizacionPlan!,
                         style: AppTypography.secondary,
+                      ),
+                    ),
+                  if (subscription != null &&
+                      (subscription.isCheckoutPending ||
+                          subscription.isPaymentPending ||
+                          subscription.status == 'paused'))
+                    Container(
+                      margin: const EdgeInsets.only(top: 12, bottom: 4),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.goldSoftBg,
+                        borderRadius: BorderRadius.circular(AppRadii.xl2),
+                        border: Border.all(color: AppColors.goldBorder),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            appText(
+                              context,
+                              subscription.isCheckoutPending
+                                  ? 'Proceso de pago pendiente del plan ${subscription.plan.label}'
+                                  : subscription.status == 'paused'
+                                  ? 'Suscripción ${subscription.plan.label} pausada'
+                                  : 'Tienes un proceso de pago pendiente del plan ${subscription.plan.label}',
+                              subscription.isCheckoutPending
+                                  ? 'Payment process pending for the ${subscription.plan.label} plan'
+                                  : subscription.status == 'paused'
+                                  ? '${subscription.plan.label} subscription is paused'
+                                  : 'You have a pending payment process for the ${subscription.plan.label} plan',
+                            ),
+                            style: AppTypography.itemTitle.copyWith(
+                              color: AppColors.goldDeep,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subscription.isCheckoutPending
+                                ? appText(
+                                    context,
+                                    'Puedes continuar este proceso cuando quieras. Se conservará el mismo plan y no se creará otra solicitud.',
+                                    'You can resume this process whenever you want. The same plan will be kept and no new request will be created.',
+                                  )
+                                : subscription.status == 'paused'
+                                ? appText(
+                                    context,
+                                    'Esta suscripción está pausada. Cancélala desde MYD para volver a elegir un plan.',
+                                    'This subscription is paused. Cancel it from MYD before choosing another plan.',
+                                  )
+                                : appText(
+                                    context,
+                                    'Abre Mercado Pago para continuar o revisar el pago. Si sales, podrás volver a entrar desde aquí.',
+                                    'Open Mercado Pago to continue or review payment. If you leave, you can reopen it here.',
+                                  ),
+                            style: AppTypography.secondary,
+                          ),
+                          const SizedBox(height: 8),
+                          if (subscription.canContinueCheckout)
+                            FilledButton.icon(
+                              onPressed: _iniciandoCheckout
+                                  ? null
+                                  : _continuarCheckout,
+                              icon: Icon(
+                                subscription.isCheckoutPending
+                                    ? Icons.hourglass_top_rounded
+                                    : Icons.open_in_new_rounded,
+                              ),
+                              label: Text(
+                                appText(
+                                  context,
+                                  subscription.isPaymentPending
+                                      ? 'Continuar pago'
+                                      : 'Reabrir checkout',
+                                  subscription.isPaymentPending
+                                      ? 'Continue payment'
+                                      : 'Reopen checkout',
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  if (subscription != null && subscription.canCancel)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: _iniciandoCheckout
+                            ? null
+                            : _cancelarSuscripcion,
+                        icon: Icon(Icons.cancel_outlined, color: AppColors.red),
+                        label: Text(
+                          subscription.isPaymentProcessPending
+                              ? appText(
+                                  context,
+                                  'Cancelar proceso de pago (${subscription.plan.label})',
+                                  'Cancel payment process (${subscription.plan.label})',
+                                )
+                              : subscription.isTrialActive
+                              ? appText(
+                                  context,
+                                  'Cancelar prueba gratis de Premium',
+                                  'Cancel Premium free trial',
+                                )
+                              : appText(
+                                  context,
+                                  'Cancelar plan ${subscription.plan.label} ahora',
+                                  'Cancel ${subscription.plan.label} plan now',
+                                ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: AppColors.red),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: AppColors.red),
+                        ),
+                      ),
+                    ),
+                  if (isTrialActive)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        appText(
+                          context,
+                          'Prueba gratis de ${subscription!.trialDays} días activa.',
+                          '${subscription.trialDays}-day free trial is active.',
+                        ),
+                        style: AppTypography.secondary.copyWith(
+                          color: AppColors.green,
+                        ),
                       ),
                     ),
                   const SizedBox(height: 12),
@@ -1033,7 +1789,13 @@ class _PerfilScreenState extends State<PerfilScreen>
                       child: _tarjetaOfertaPlan(tier, plan),
                     ),
                   ),
-                  if (kIsWeb && plan != PlanTier.free)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _tarjetaPruebaPremium(plan, subscription),
+                  ),
+                  if (kIsWeb &&
+                      plan != PlanTier.free &&
+                      subscription?.status == 'authorized')
                     Padding(
                       padding: const EdgeInsets.only(bottom: 4),
                       child: Text(
@@ -1041,27 +1803,27 @@ class _PerfilScreenState extends State<PerfilScreen>
                           context,
                           plan == PlanTier.standard
                               ? 'Tu suscripción Estándar está activa. Puedes probar la mejora a Premium con 50% de descuento en el próximo cobro; verifica siempre el monto y la fecha en Mercado Pago.'
-                              : 'Ya tienes una suscripción activa. La renovación y cancelación todavía no se pueden administrar desde MYD.',
+                              : 'Tu suscripción Premium está activa. Puedes cancelarla ahora desde MYD.',
                           plan == PlanTier.standard
                               ? 'Your Standard subscription is active. You can test the Premium upgrade with 50% off the next charge; always verify the amount and date in Mercado Pago.'
-                              : 'You already have an active subscription. Renewal and cancellation are not yet available in MYD.',
+                              : 'Your Premium subscription is active. You can cancel it now from MYD.',
                         ),
                         style: AppTypography.secondary,
                       ),
                     ),
-                  if (!kIsWeb)
+                  if (!_supportsMercadoPagoCheckout)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
                         appText(
                           context,
-                          'La compra está disponible en la versión web de MYD.',
-                          'Purchases are available in the MYD web app.',
+                          'La compra con Mercado Pago está disponible en MYD web y en la APK distribuida directamente.',
+                          'Mercado Pago purchases are available on MYD web and the directly distributed APK.',
                         ),
                         style: AppTypography.secondary,
                       ),
                     ),
-                  if (kIsWeb) ...[
+                  if (_supportsMercadoPagoCheckout) ...[
                     TextButton.icon(
                       onPressed: _cargandoPlan ? null : _cargarPlan,
                       icon: const Icon(Icons.refresh),
@@ -1077,9 +1839,33 @@ class _PerfilScreenState extends State<PerfilScreen>
   }
 
   Widget _tarjetaOfertaPlan(PlanTier tier, PlanTier planActual) {
+    final subscription = _suscripcion;
+    final hasUnresolvedSubscription =
+        subscription != null &&
+        (subscription.isCheckoutPending ||
+            subscription.isPaymentPending ||
+            subscription.status == 'paused');
     final isCurrent = tier == planActual;
     final isPremiumUpgrade =
         planActual == PlanTier.standard && tier == PlanTier.premium;
+    final isUnavailablePremiumUpgrade =
+        isPremiumUpgrade && !_upgradePromotionAvailable;
+    final tierColor = switch (tier) {
+      PlanTier.free => AppColors.green,
+      PlanTier.standard => AppColors.goldDeep,
+      PlanTier.premium => const Color(0xFF7C3AED),
+    };
+    final tierBackground = tier == PlanTier.free
+        ? AppColors.surface
+        : Color.alphaBlend(
+            tierColor.withValues(alpha: 0.08),
+            AppColors.surface,
+          );
+    final tierBorder = switch (tier) {
+      PlanTier.free => AppColors.borderSoft,
+      PlanTier.standard => tierColor.withValues(alpha: 0.65),
+      PlanTier.premium => tierColor,
+    };
     final price = PlanService.priceCopFor(tier, _periodoSeleccionado);
     final priceLabel = price == null
         ? appText(context, 'Gratis', 'Free')
@@ -1146,6 +1932,20 @@ class _PerfilScreenState extends State<PerfilScreen>
     };
 
     return Card(
+      color: tierBackground,
+      elevation: tier == PlanTier.premium ? 2 : 0,
+      shadowColor: tierColor.withValues(alpha: 0.24),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        side: BorderSide(
+          color: tierBorder,
+          width: tier == PlanTier.premium
+              ? 2
+              : tier == PlanTier.standard
+              ? 1.5
+              : 1,
+        ),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -1153,8 +1953,43 @@ class _PerfilScreenState extends State<PerfilScreen>
           children: [
             Row(
               children: [
+                CircleAvatar(
+                  radius: tier == PlanTier.premium ? 20 : 17,
+                  backgroundColor: tierColor.withValues(alpha: 0.13),
+                  child: Icon(
+                    switch (tier) {
+                      PlanTier.free => Icons.eco_outlined,
+                      PlanTier.standard => Icons.star_outline_rounded,
+                      PlanTier.premium => Icons.workspace_premium_rounded,
+                    },
+                    size: tier == PlanTier.premium ? 23 : 19,
+                    color: tierColor,
+                  ),
+                ),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(tier.label, style: AppTypography.itemTitle),
+                  child: Text(switch (tier) {
+                    PlanTier.free => tier.label,
+                    PlanTier.standard => appText(
+                      context,
+                      'Estándar ⭐',
+                      'Standard ⭐',
+                    ),
+                    PlanTier.premium => appText(
+                      context,
+                      'Premium ✨',
+                      'Premium ✨',
+                    ),
+                  }, style: AppTypography.itemTitle.copyWith(color: tierColor)),
+                ),
+                IconButton(
+                  tooltip: appText(
+                    context,
+                    'Información del plan ${tier.label}',
+                    '${tier.label} plan information',
+                  ),
+                  onPressed: () => _mostrarInformacionPlan(tier),
+                  icon: const Icon(Icons.info_outline_rounded),
                 ),
                 if (isCurrent)
                   Chip(
@@ -1165,6 +2000,54 @@ class _PerfilScreenState extends State<PerfilScreen>
                   ),
               ],
             ),
+            if (tier == PlanTier.standard)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    appText(
+                      context,
+                      '⭐ Más espacio para tus planes y finanzas',
+                      '⭐ More room for your plans and finances',
+                    ),
+                    style: AppTypography.secondary.copyWith(
+                      color: tierColor,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            if (tier == PlanTier.premium)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      tierColor,
+                      const Color(0xFF9F67E8),
+                      const Color(0xFF6D28D9),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(AppRadii.xl),
+                ),
+                child: Text(
+                  appText(
+                    context,
+                    '👑 EXPERIENCIA COMPLETA  ✨  💎',
+                    '👑 THE COMPLETE EXPERIENCE  ✨  💎',
+                  ),
+                  textAlign: TextAlign.center,
+                  style: AppTypography.secondary.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             const SizedBox(height: 4),
             Text(priceLabel, style: AppTypography.itemTitle),
             const SizedBox(height: 8),
@@ -1187,14 +2070,29 @@ class _PerfilScreenState extends State<PerfilScreen>
                 ),
               ),
             ),
-            if (tier != PlanTier.free)
+            if (tier != PlanTier.free && isUnavailablePremiumUpgrade)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  appText(
+                    context,
+                    'La mejora con descuento estará disponible después de validar los cobros reales.',
+                    'The discounted upgrade will be available after real-payment validation.',
+                  ),
+                  style: AppTypography.secondary,
+                ),
+              ),
+            if (tier != PlanTier.free && !isUnavailablePremiumUpgrade)
               Padding(
                 padding: const EdgeInsets.only(top: 10),
                 child: FilledButton(
                   onPressed:
                       isCurrent ||
                           (planActual != PlanTier.free && !isPremiumUpgrade) ||
-                          !kIsWeb ||
+                          (hasUnresolvedSubscription && !isPremiumUpgrade) ||
+                          !(isPremiumUpgrade
+                              ? kIsWeb
+                              : _supportsMercadoPagoCheckout) ||
                           _iniciandoCheckout
                       ? null
                       : isPremiumUpgrade
@@ -1229,6 +2127,107 @@ class _PerfilScreenState extends State<PerfilScreen>
     );
   }
 
+  Widget _tarjetaPruebaPremium(
+    PlanTier planActual,
+    PlanSubscriptionDetails? subscription,
+  ) {
+    final hasUnresolvedSubscription =
+        subscription != null &&
+        (subscription.isCheckoutPending ||
+            subscription.isPaymentPending ||
+            subscription.status == 'paused');
+    final price = _formatearPrecioCop(
+      PlanService.priceCopFor(PlanTier.premium, PlanBillingPeriod.monthly)!,
+    );
+    final eligible =
+        planActual == PlanTier.free &&
+        !_hasUsedPremiumTrial &&
+        !hasUnresolvedSubscription &&
+        _supportsMercadoPagoCheckout &&
+        !_iniciandoCheckout;
+
+    return Card(
+      color: AppColors.goldChipBg,
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    appText(
+                      context,
+                      'Premium gratis por 7 días',
+                      'Premium free for 7 days',
+                    ),
+                    style: AppTypography.itemTitle,
+                  ),
+                ),
+                Icon(Icons.star_rounded, color: AppColors.gold),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              appText(
+                context,
+                'Luego \$$price COP / mes',
+                'Then \$$price COP / month',
+              ),
+              style: AppTypography.itemTitle,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              appText(
+                context,
+                'Sin cobro durante los primeros 7 días. Mercado Pago solicitará un medio de pago para iniciar el cobro mensual al terminar la prueba. Cancela antes desde MYD para evitar el siguiente cobro. Disponible una sola vez por cuenta.',
+                'No charge during the first 7 days. Mercado Pago will request a payment method to start the monthly charge after the trial. Cancel beforehand from MYD to avoid the next charge. Available once per account.',
+              ),
+              style: AppTypography.secondary,
+            ),
+            const SizedBox(height: 10),
+            FilledButton.icon(
+              onPressed: eligible
+                  ? () => _iniciarCheckout(
+                      PlanTier.premium,
+                      PlanBillingPeriod.monthly,
+                      trialDays: 7,
+                    )
+                  : null,
+              icon: _iniciandoCheckout
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.card_giftcard_rounded),
+              label: Text(
+                _hasUsedPremiumTrial
+                    ? appText(
+                        context,
+                        'Prueba gratis ya utilizada',
+                        'Free trial already used',
+                      )
+                    : planActual != PlanTier.free
+                    ? appText(
+                        context,
+                        'Disponible en el plan Gratis',
+                        'Available on the Free plan',
+                      )
+                    : appText(
+                        context,
+                        'Probar Premium por 7 días',
+                        'Try Premium for 7 days',
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   String _formatearPrecioCop(int amount) {
     final digits = amount.toString();
     final grouped = StringBuffer();
@@ -1244,6 +2243,134 @@ class _PerfilScreenState extends State<PerfilScreen>
   // ============================================================
   // AVATAR
   // ============================================================
+
+  Widget _encabezadoPerfil() {
+    return Column(
+      children: [
+        SizedBox(
+          height: 194,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 154,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadii.xl2),
+                  child: Material(
+                    color: AppColors.goldSoftBg,
+                    child: InkWell(
+                      onTap: _subiendoPortada ? null : _cambiarPortada,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (_portadaUrl case final String url)
+                            Image.network(
+                              url,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => _fondoPortada(),
+                            )
+                          else
+                            _fondoPortada(),
+                          Positioned(
+                            right: 12,
+                            bottom: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.overlayDark,
+                                borderRadius: BorderRadius.circular(
+                                  AppRadii.full,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (_subiendoPortada)
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  else
+                                    const Icon(
+                                      Icons.photo_camera_outlined,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    appText(
+                                      context,
+                                      _portadaUrl == null
+                                          ? 'Agregar portada'
+                                          : 'Cambiar portada',
+                                      _portadaUrl == null
+                                          ? 'Add cover'
+                                          : 'Change cover',
+                                    ),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      shape: BoxShape.circle,
+                      boxShadow: AppColors.sombraPremium(
+                        Colors.black,
+                        blur: 12,
+                        dy: 3,
+                      ),
+                    ),
+                    child: _avatar(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _fondoPortada() {
+    return Container(
+      decoration: BoxDecoration(gradient: AppColors.goldGradient),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.auto_awesome_rounded,
+        color: Colors.white.withValues(alpha: 0.8),
+        size: 42,
+      ),
+    );
+  }
 
   Widget _avatar() {
     return GestureDetector(

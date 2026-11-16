@@ -1,6 +1,6 @@
 -- Read-only checks to run in the Supabase SQL Editor before release.
 
--- Every user-owned public table should have RLS enabled.
+-- Review RLS on every public table, including tables with different owner columns.
 select
   n.nspname as schema_name,
   c.relname as table_name,
@@ -10,16 +10,6 @@ from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public'
   and c.relkind in ('r', 'p')
-  and (
-    c.relname = 'perfiles'
-    or exists (
-      select 1
-      from pg_attribute a
-      where a.attrelid = c.oid
-        and a.attname = 'usuario_id'
-        and not a.attisdropped
-    )
-  )
 order by c.relname;
 
 -- Review the row filters and write checks for those tables and Storage.

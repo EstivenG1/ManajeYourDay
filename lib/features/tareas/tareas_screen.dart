@@ -4,11 +4,15 @@ import '../../core/localization/app_text.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/guided_tour.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/plan_service.dart';
 import 'task_form_screen.dart';
 
 class TareasScreen extends StatefulWidget {
-  const TareasScreen({super.key});
+  const TareasScreen({super.key, this.active = false});
+
+  final bool active;
 
   @override
   State<TareasScreen> createState() => _TareasScreenState();
@@ -36,6 +40,38 @@ class _TareasScreenState extends State<TareasScreen> {
   void initState() {
     super.initState();
     _cargarTareas();
+    if (widget.active) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _mostrarGuiaInicial(),
+      );
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant TareasScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.active && widget.active) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _mostrarGuiaInicial(),
+      );
+    }
+  }
+
+  Future<void> _mostrarGuiaInicial() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null) return;
+    final crear = await mostrarGuiaInicial(
+      context: context,
+      storageKey: 'guided_tasks_v1_$userId',
+      title: appText(context, 'Organiza tus tareas', 'Organize your tasks'),
+      description: appText(
+        context,
+        'Elige un título, una fecha, una hora y una prioridad. Puedes repetir una tarea cada día, semana o mes, o dejarla como una sola tarea.',
+        'Choose a title, date, time, and priority. You can repeat a task daily, weekly, or monthly, or keep it as a one-time task.',
+      ),
+      startLabel: appText(context, 'Crear una tarea', 'Create a task'),
+    );
+    if (crear && mounted) await _abrirFormulario(mostrarGuia: true);
   }
 
   Future<void> _cargarTareas() async {
@@ -44,7 +80,9 @@ class _TareasScreenState extends State<TareasScreen> {
       _errorCarga = null;
     });
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final data = await supabase
           .from('tareas')
           .select()
@@ -150,7 +188,7 @@ class _TareasScreenState extends State<TareasScreen> {
           SnackBar(
             content: Text(
               nuevoEstado == 'completada'
-                  ? 'La tarea se completó, pero no se pudo programar su siguiente repetición: $error'
+                  ? 'La tarea se completó, pero no se pudo programar su siguiente repetición: ${PlanService.errorMessage(error)}'
                   : 'La tarea se actualizó, pero no se pudo programar el recordatorio: $error',
             ),
           ),
@@ -199,7 +237,9 @@ class _TareasScreenState extends State<TareasScreen> {
       }
     }
 
-    final usuarioId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+    final usuarioId = user.id;
     final nueva = await supabase
         .from('tareas')
         .insert({
@@ -265,10 +305,15 @@ class _TareasScreenState extends State<TareasScreen> {
     }
   }
 
-  Future<void> _abrirFormulario({Map<String, dynamic>? tarea}) async {
+  Future<void> _abrirFormulario({
+    Map<String, dynamic>? tarea,
+    bool mostrarGuia = false,
+  }) async {
     final resultado = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => TaskFormScreen(tarea: tarea)),
+      MaterialPageRoute(
+        builder: (_) => TaskFormScreen(tarea: tarea, mostrarGuia: mostrarGuia),
+      ),
     );
     if (resultado == true) _cargarTareas();
   }
@@ -545,6 +590,7 @@ class _TareasScreenState extends State<TareasScreen> {
               ),
             ),
       floatingActionButton: FloatingActionButton(
+        heroTag: 'tasks-create',
         backgroundColor: AppColors.gold,
         foregroundColor: Colors.white,
         onPressed: () => _abrirFormulario(),
@@ -633,92 +679,101 @@ class _TareasScreenState extends State<TareasScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
+      child: Material(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(tema.radioTarjeta),
-        border: Border.all(
-          color: AppColors.borderSoft,
-          width: AppRadii.borderWidth,
-        ),
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => _alternarEstado(tarea),
-            child: Icon(
-              completada ? Icons.check_circle : Icons.radio_button_unchecked,
-              color: completada ? AppColors.green : color,
-              size: 26,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(tema.radioTarjeta),
+          onTap: () => _abrirFormulario(tarea: tarea),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(tema.radioTarjeta),
+              border: Border.all(
+                color: AppColors.borderSoft,
+                width: AppRadii.borderWidth,
+              ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _abrirFormulario(tarea: tarea),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    tarea['titulo'] ?? '',
-                    style: AppTypography.itemTitle.copyWith(
-                      color: completada
-                          ? AppColors.textTertiary
-                          : AppColors.textPrimary,
-                      decoration: completada
-                          ? TextDecoration.lineThrough
-                          : TextDecoration.none,
-                    ),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: () => _alternarEstado(tarea),
+                  child: Icon(
+                    completada
+                        ? Icons.check_circle
+                        : Icons.radio_button_unchecked,
+                    color: completada ? AppColors.green : color,
+                    size: 26,
                   ),
-                  const SizedBox(height: 4),
-                  Row(
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.schedule,
-                        size: 13,
-                        color: AppColors.textTertiary,
-                      ),
-                      const SizedBox(width: 4),
                       Text(
-                        fechaTexto,
-                        style: AppTypography.secondary.copyWith(
-                          color: AppColors.textTertiary,
-                          fontSize: 12,
+                        tarea['titulo'] ?? '',
+                        style: AppTypography.itemTitle.copyWith(
+                          color: completada
+                              ? AppColors.textTertiary
+                              : AppColors.textPrimary,
+                          decoration: completada
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        (tarea['prioridad'] ?? '').toString().toUpperCase(),
-                        style: TextStyle(
-                          color: color,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.schedule,
+                            size: 13,
+                            color: AppColors.textTertiary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            fechaTexto,
+                            style: AppTypography.secondary.copyWith(
+                              color: AppColors.textTertiary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            (tarea['prioridad'] ?? '').toString().toUpperCase(),
+                            style: TextStyle(
+                              color: color,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: AppColors.textTertiary,
+                    size: 20,
+                  ),
+                  onPressed: () => _eliminarTarea(tarea),
+                  tooltip: 'Eliminar tarea',
+                ),
+              ],
             ),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              color: AppColors.textTertiary,
-              size: 20,
-            ),
-            onPressed: () => _eliminarTarea(tarea),
-          ),
-        ],
+        ),
       ),
     );
   }

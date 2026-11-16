@@ -96,8 +96,13 @@ class _TransactionLocationCardState extends State<TransactionLocationCard> {
               ),
               children: [
                 TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.myd',
+                  urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.manageyourday.app',
+                  // Para producción, considera usar un proveedor de tiles con
+                  // clave de API (ej. MapTiler, Thunderforest) para cumplir con
+                  // la política de uso de OpenStreetMap y evitar límites del
+                  // servidor público.
                 ),
                 MarkerLayer(
                   markers: [

@@ -7,6 +7,7 @@ import '../../core/supabase/supabase_config.dart';
 import '../../core/auth/auth_errors.dart';
 import '../../core/services/google_auth_service.dart';
 import '../legal/legal_info_screen.dart';
+import 'email_confirmation_dialog.dart';
 import 'password_recovery_request_dialog.dart';
 
 enum AuthTab { login, register }
@@ -55,7 +56,7 @@ class _AuthScreenState extends State<AuthScreen> {
         initialEmail: _correoCtrl.text.trim(),
         onSend: (email) => supabase.auth.resetPasswordForEmail(
           email,
-          redirectTo: SupabaseConfig.passwordRecoveryRedirect,
+          redirectTo: SupabaseConfig.currentPasswordRecoveryRedirect,
         ),
       ),
     );
@@ -84,6 +85,7 @@ class _AuthScreenState extends State<AuthScreen> {
           : await supabase.auth.signUp(
               email: _correoCtrl.text.trim(),
               password: _passwordCtrl.text,
+              emailRedirectTo: SupabaseConfig.currentAuthCallbackRedirect,
               data: {
                 'nombre': _nombreCtrl.text.trim(),
                 'apellido': _apellidoCtrl.text.trim().isEmpty
@@ -97,10 +99,12 @@ class _AuthScreenState extends State<AuthScreen> {
       if (respuesta.session != null) {
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else if (_tab == AuthTab.register) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cuenta creada. Ahora inicia sesión.')),
-        );
+        final email = _correoCtrl.text.trim();
         setState(() => _tab = AuthTab.login);
+        await showDialog<void>(
+          context: context,
+          builder: (_) => EmailConfirmationDialog(email: email),
+        );
       }
     } catch (e) {
       if (!mounted) return;

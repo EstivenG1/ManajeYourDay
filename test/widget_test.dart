@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myd/core/theme/app_theme.dart';
-import 'package:myd/features/splash/welcome_screen.dart';
+import 'package:manage_your_day/core/theme/app_theme.dart';
+import 'package:manage_your_day/features/splash/welcome_screen.dart';
 
 void main() {
   testWidgets('La pantalla de bienvenida muestra el logo MYD y el CTA',

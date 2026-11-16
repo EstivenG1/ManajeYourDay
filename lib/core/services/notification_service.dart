@@ -1,8 +1,10 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest.dart' as tz_data;
 import 'package:timezone/timezone.dart' as tz;
+
 import '../supabase/supabase_config.dart';
 import '../settings/app_settings.dart';
+import 'finance_repository.dart';
 
 /// Servicio de notificaciones locales de MYD.
 /// Las notificaciones se programan y muestran directamente en el dispositivo.
@@ -26,16 +28,16 @@ class NotificationService {
   static Future<void> init() async {
     tz_data.initializeTimeZones();
 
-    // Zona horaria de Colombia.
-    tz.setLocalLocation(tz.getLocation('America/Bogota'));
+    // Usar la zona horaria del dispositivo (tz.local), no una zona fija.
 
-    const androidSettings =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
 
     const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
+      requestAlertPermission: false,
+      requestBadgePermission: false,
+      requestSoundPermission: false,
     );
 
     const settings = InitializationSettings(
@@ -44,23 +46,32 @@ class NotificationService {
     );
 
     await _plugin.initialize(settings);
-
-    if (AppSettings.instance.notificationsEnabled) {
-      await solicitarPermisos();
-    }
-
     _listo = true;
   }
 
-  static Future<void> solicitarPermisos() async {
-    await _plugin
+  static Future<bool> solicitarPermisos() async {
+    final android = _plugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.requestNotificationsPermission();
-    await _plugin
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (android != null) {
+      return await android.requestNotificationsPermission() ?? true;
+    }
+
+    final ios = _plugin
         .resolvePlatformSpecificImplementation<
-            IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(alert: true, badge: true, sound: true);
+          IOSFlutterLocalNotificationsPlugin
+        >();
+    if (ios != null) {
+      return await ios.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          true;
+    }
+
+    return true;
   }
 
   static Future<void> cancelarTodas() => _plugin.cancelAll();
@@ -104,7 +115,9 @@ class NotificationService {
 
     final metas = await supabase
         .from('metas_ahorro')
-        .select('id, nombre, aporte_programado, frecuencia_aporte, proximo_aporte')
+        .select(
+          'id, nombre, aporte_programado, frecuencia_aporte, proximo_aporte',
+        )
         .eq('usuario_id', userId)
         .eq('estado', 'activa');
     for (final item in metas) {
@@ -124,23 +137,22 @@ class NotificationService {
   // Canal para recordatorios de tareas.
   static const AndroidNotificationDetails _canalTareas =
       AndroidNotificationDetails(
-    'tareas_channel',
-    'Recordatorios de tareas',
-    channelDescription: 'Avisos antes de que venza una tarea',
-    importance: Importance.high,
-    priority: Priority.high,
-  );
+        'tareas_channel',
+        'Recordatorios de tareas',
+        channelDescription: 'Avisos antes de que venza una tarea',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
 
   // Canal para alertas de presupuesto.
   static const AndroidNotificationDetails _canalPresupuestos =
       AndroidNotificationDetails(
-    'presupuestos_channel',
-    'Alertas de presupuesto',
-    channelDescription:
-        'Avisos al acercarte o superar un presupuesto',
-    importance: Importance.high,
-    priority: Priority.high,
-  );
+        'presupuestos_channel',
+        'Alertas de presupuesto',
+        channelDescription: 'Avisos al acercarte o superar un presupuesto',
+        importance: Importance.high,
+        priority: Priority.high,
+      );
 
   /// Programa un recordatorio 15 minutos antes
   /// de que venza una tarea.
@@ -151,8 +163,7 @@ class NotificationService {
   }) async {
     if (!_listo || !AppSettings.instance.notificationsEnabled) return;
 
-    final momento =
-        fechaLimite.subtract(const Duration(minutes: 15));
+    final momento = fechaLimite.subtract(const Duration(minutes: 15));
 
     // Si el momento del recordatorio ya pasó, no hacemos nada.
     if (momento.isBefore(DateTime.now())) return;
@@ -168,8 +179,7 @@ class NotificationService {
       ),
 
       // Android.
-      androidScheduleMode:
-          AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
 
       // Compatibilidad con versiones que requieren
       // interpretación de fecha para iOS.
@@ -179,9 +189,7 @@ class NotificationService {
   }
 
   /// Cancela el recordatorio de una tarea.
-  static Future<void> cancelarRecordatorioTarea(
-    String tareaId,
-  ) async {
+  static Future<void> cancelarRecordatorioTarea(String tareaId) async {
     await _plugin.cancel(_notificationId('tarea:$tareaId'));
   }
 
@@ -225,9 +233,7 @@ class NotificationService {
     required String frecuencia,
     required DateTime proximoAporte,
   }) async {
-    if (!_listo ||
-        !AppSettings.instance.notificationsEnabled ||
-        aporte <= 0) {
+    if (!_listo || !AppSettings.instance.notificationsEnabled || aporte <= 0) {
       return;
     }
     final aviso = DateTime(
@@ -314,9 +320,7 @@ class NotificationService {
       // Buscar presupuesto activo.
       final presupuesto = await supabase
           .from('presupuestos')
-          .select(
-            'id, monto_limite, fecha_inicio, fecha_fin',
-          )
+          .select('id, monto_limite, fecha_inicio, fecha_fin')
           .eq('usuario_id', userId)
           .eq('categoria_id', categoriaId)
           .lte('fecha_inicio', hoyStr)
@@ -325,33 +329,13 @@ class NotificationService {
 
       if (presupuesto == null) return;
 
-      // Buscar gastos del periodo.
-      var total = 0.0;
-      const tamanoPagina = 500;
-      for (var inicio = 0;; inicio += tamanoPagina) {
-        final gastado = await supabase
-            .from('movimientos')
-            .select('monto')
-            .eq('usuario_id', userId)
-            .eq('categoria_id', categoriaId)
-            .eq('tipo', 'gasto')
-            .gte('fecha', presupuesto['fecha_inicio'])
-            .lte('fecha', presupuesto['fecha_fin'])
-            .order('id')
-            .range(inicio, inicio + tamanoPagina - 1);
-        total += (gastado as List).fold<double>(
-          0,
-          (acumulado, movimiento) =>
-              acumulado + (movimiento['monto'] as num).toDouble(),
-        );
-        if (gastado.length < tamanoPagina) break;
-      }
+      final gastosPorPresupuesto = await FinanceRepository(supabase)
+          .loadBudgetSpending();
+      final total = gastosPorPresupuesto[presupuesto['id'].toString()] ?? 0;
 
-      final limite =
-          (presupuesto['monto_limite'] as num).toDouble();
+      final limite = (presupuesto['monto_limite'] as num).toDouble();
 
-      final porcentaje =
-          limite == 0 ? 0.0 : (total / limite) * 100;
+      final porcentaje = limite == 0 ? 0.0 : (total / limite) * 100;
 
       // Presupuesto superado.
       if (porcentaje >= 100) {
@@ -363,7 +347,6 @@ class NotificationService {
               '"$nombreCategoria" para este periodo.',
         );
       }
-
       // 80% del presupuesto.
       else if (porcentaje >= 80) {
         await _mostrarAhora(

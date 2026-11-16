@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../../core/localization/app_text.dart';
+import '../../core/services/guided_tour.dart';
+import '../../core/services/home_utils.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/sugerencias_service.dart';
 import '../../core/services/notification_service.dart';
+import '../../core/services/plan_service.dart';
 
 class TaskFormScreen extends StatefulWidget {
   final Map<String, dynamic>? tarea;
-  const TaskFormScreen({super.key, this.tarea});
+  final bool mostrarGuia;
+  const TaskFormScreen({super.key, this.tarea, this.mostrarGuia = false});
 
   @override
   State<TaskFormScreen> createState() => _TaskFormScreenState();
@@ -16,14 +20,21 @@ class TaskFormScreen extends StatefulWidget {
 
 class _TaskFormScreenState extends State<TaskFormScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _tituloKey = GlobalKey();
+  final _descripcionKey = GlobalKey();
+  final _fechaHoraKey = GlobalKey();
+  final _prioridadKey = GlobalKey();
+  final _recurrenciaKey = GlobalKey();
+  final _guardarKey = GlobalKey();
   final _descripcionCtrl = TextEditingController();
+  final _descripcionFocusNode = FocusNode();
   TextEditingController? _tituloCtrl;
 
   late DateTime _fecha;
   late TimeOfDay _hora;
   String _prioridad = 'media';
   String _recurrencia = 'ninguna';
-  bool _guardando = true;
+  bool _guardando = false;
 
   List<String> _sugerenciasTitulo = [];
   List<String> _sugerenciasHora = [];
@@ -49,6 +60,88 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     }
 
     _cargarSugerencias();
+    if (widget.mostrarGuia) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _mostrarGuia());
+    }
+  }
+
+  Future<void> _mostrarGuia() async {
+    final userId = supabase.auth.currentUser?.id;
+    if (userId == null || !mounted) return;
+    await mostrarTourGuiado(
+      context: context,
+      storageKey: 'guided_task_form_v2_$userId',
+      force: true,
+      steps: [
+        TutorialStep(
+          title: appText(context, 'Nombre de la tarea', 'Task title'),
+          description: appText(
+            context,
+            'Escribe qué necesitas hacer. Puedes elegir una sugerencia o escribir tu propio título.',
+            'Enter what you need to do. Choose a suggestion or write your own title.',
+          ),
+          icon: Icons.edit_note_rounded,
+          color: AppColors.gold,
+          target: _tituloKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Descripción', 'Description'),
+          description: appText(
+            context,
+            'Agrega detalles si los necesitas. Este campo es opcional.',
+            'Add details if you need them. This field is optional.',
+          ),
+          icon: Icons.notes_rounded,
+          color: AppColors.gold,
+          target: _descripcionKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Fecha y hora', 'Date and time'),
+          description: appText(
+            context,
+            'Elige cuándo debe completarse y recibirás un recordatorio.',
+            'Choose when it is due and you will receive a reminder.',
+          ),
+          icon: Icons.calendar_month_rounded,
+          color: AppColors.gold,
+          target: _fechaHoraKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Prioridad', 'Priority'),
+          description: appText(
+            context,
+            'Marca si la tarea es alta, media o baja para organizar tus pendientes.',
+            'Set high, medium, or low priority to organize your tasks.',
+          ),
+          icon: Icons.flag_outlined,
+          color: AppColors.gold,
+          target: _prioridadKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Repetición', 'Repeat'),
+          description: appText(
+            context,
+            'Puedes dejarla sin repetición o programarla cada día, semana o mes.',
+            'Leave it as a one-time task, or repeat it daily, weekly, or monthly.',
+          ),
+          icon: Icons.repeat_rounded,
+          color: AppColors.gold,
+          target: _recurrenciaKey,
+        ),
+        TutorialStep(
+          title: appText(context, 'Guarda tu tarea', 'Save your task'),
+          description: appText(
+            context,
+            'Cuando termines, presiona Crear tarea.',
+            'When you are done, tap Create task.',
+          ),
+          icon: Icons.check_circle_outline_rounded,
+          color: AppColors.gold,
+          target: _guardarKey,
+          nextLabel: appText(context, 'Terminar guía', 'Finish guide'),
+        ),
+      ],
+    );
   }
 
   Future<void> _cargarSugerencias() async {
@@ -82,6 +175,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
   @override
   void dispose() {
     _descripcionCtrl.dispose();
+    _descripcionFocusNode.dispose();
     super.dispose();
   }
 
@@ -126,7 +220,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
     );
 
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
       final datos = {
         'titulo': titulo,
         'descripcion': _descripcionCtrl.text.trim().isEmpty
@@ -142,6 +238,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
         tareaId = widget.tarea!['id'];
         await supabase.from('tareas').update(datos).eq('id', tareaId);
       } else {
+        await PlanService.ensureCanCreate(PlanResource.tasksMonthly);
         final insertado = await supabase
             .from('tareas')
             .insert({...datos, 'usuario_id': userId, 'estado': 'pendiente'})
@@ -168,8 +265,11 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('No se pudo guardar: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudo guardar: ${PlanService.errorMessage(e)}'),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _guardando = false);
@@ -215,7 +315,9 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ),
                 const SizedBox(height: 8),
                 TextFormField(
+                  key: _descripcionKey,
                   controller: _descripcionCtrl,
+                  focusNode: _descripcionFocusNode,
                   maxLines: 2,
                   decoration: InputDecoration(
                     hintText: 'Detalles de la tarea...',
@@ -229,6 +331,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ),
                 const SizedBox(height: 8),
                 Row(
+                  key: _fechaHoraKey,
                   children: [
                     Expanded(
                       child: _botonSelector(
@@ -311,7 +414,10 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                   style: AppTypography.sectionLabel,
                 ),
                 const SizedBox(height: 8),
-                _selectorPrioridad(tema),
+                KeyedSubtree(
+                  key: _prioridadKey,
+                  child: _selectorPrioridad(tema),
+                ),
                 const SizedBox(height: 20),
                 Text(
                   appText(context, 'REPETICIÓN', 'REPEAT'),
@@ -319,6 +425,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
+                  key: _recurrenciaKey,
                   initialValue: _recurrencia,
                   items: [
                     DropdownMenuItem(
@@ -358,6 +465,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
                 const SizedBox(height: 32),
 
                 SizedBox(
+                  key: _guardarKey,
                   height: 56,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
@@ -413,6 +521,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
 
   Widget _campoTituloConAutocompletado() {
     return Autocomplete<String>(
+      key: _tituloKey,
       initialValue: TextEditingValue(text: widget.tarea?['titulo'] ?? ''),
       optionsBuilder: (value) {
         if (value.text.trim().isEmpty) return _sugerenciasTitulo.take(5);

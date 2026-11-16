@@ -4,33 +4,81 @@ import '../localization/app_text.dart';
 import '../theme/app_theme.dart';
 import 'home_utils.dart';
 
-Future<void> mostrarTourGuiado({
+final Set<String> _tutorialesEnCurso = {};
+
+Future<bool> mostrarTourGuiado({
   required BuildContext context,
   required String storageKey,
   required List<TutorialStep> steps,
   bool force = false,
 }) async {
-  if (steps.isEmpty ||
-      (!force && !await debeMostrarTutorial(storageKey)) ||
-      !context.mounted) {
-    return;
+  if (steps.isEmpty || !_tutorialesEnCurso.add(storageKey)) return false;
+  try {
+    if ((!force && !await debeMostrarTutorial(storageKey)) ||
+        !context.mounted) {
+      return false;
+    }
+
+    final resultado = await showGeneralDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierLabel: 'Tour guiado',
+      barrierColor: Colors.transparent,
+      transitionDuration: const Duration(milliseconds: 160),
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          _GuidedTour(steps: steps),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return FadeTransition(opacity: animation, child: child);
+      },
+    );
+
+    if (resultado != null) {
+      await marcarTutorialMostrado(storageKey);
+    }
+    return resultado == true;
+  } finally {
+    _tutorialesEnCurso.remove(storageKey);
   }
+}
 
-  final completado = await showGeneralDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    barrierLabel: 'Tour guiado',
-    barrierColor: Colors.transparent,
-    transitionDuration: const Duration(milliseconds: 220),
-    pageBuilder: (context, animation, secondaryAnimation) =>
-        _GuidedTour(steps: steps),
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(opacity: animation, child: child);
-    },
-  );
+Future<bool> mostrarGuiaInicial({
+  required BuildContext context,
+  required String storageKey,
+  required String title,
+  required String description,
+  required String startLabel,
+}) async {
+  if (!_tutorialesEnCurso.add(storageKey)) return false;
+  try {
+    if (!context.mounted ||
+        !await debeMostrarTutorial(storageKey) ||
+        !context.mounted) {
+      return false;
+    }
 
-  if (completado == true) {
+    final iniciar = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: Icon(Icons.lightbulb_outline_rounded, color: AppColors.gold),
+        title: Text(title),
+        content: Text(description),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(appText(context, 'Ahora no', 'Not now')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(startLabel),
+          ),
+        ],
+      ),
+    );
     await marcarTutorialMostrado(storageKey);
+    return iniciar == true;
+  } finally {
+    _tutorialesEnCurso.remove(storageKey);
   }
 }
 
@@ -46,15 +94,44 @@ class _GuidedTour extends StatefulWidget {
 class _GuidedTourState extends State<_GuidedTour> {
   int _index = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _desplazarObjetivo());
+  }
+
   void _siguiente() {
     if (_index == widget.steps.length - 1) {
       Navigator.of(context).pop(true);
       return;
     }
     setState(() => _index++);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _desplazarObjetivo());
   }
 
-  void _saltar() => Navigator.of(context).pop(true);
+  void _saltar() => Navigator.of(context).pop(false);
+
+  Future<void> _desplazarObjetivo() async {
+    final step = widget.steps[_index];
+    final targetContext = step.target.currentContext;
+    if (targetContext == null) return;
+    final renderObject = targetContext.findRenderObject();
+    if (renderObject is RenderBox && renderObject.hasSize) {
+      final rect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
+      final media = MediaQuery.of(context);
+      if (rect.top >= media.padding.top + 12 &&
+          rect.bottom <= media.size.height - media.padding.bottom - 12) {
+        return;
+      }
+    }
+    await Scrollable.ensureVisible(
+      targetContext,
+      alignment: 0.4,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+    );
+    if (mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -207,9 +284,10 @@ class _TourCard extends StatelessWidget {
                     size: 18,
                   ),
                   label: Text(
-                    ultimoPaso
-                        ? appText(context, 'Empezar', 'Get started')
-                        : appText(context, 'Siguiente', 'Next'),
+                    step.nextLabel ??
+                        (ultimoPaso
+                            ? appText(context, 'Empezar', 'Get started')
+                            : appText(context, 'Siguiente', 'Next')),
                   ),
                 ),
               ],

@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+
 import 'core/supabase/supabase_config.dart';
 import 'core/services/notification_service.dart';
+import 'core/services/connectivity_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/auth/auth_gate.dart';
 import 'features/auth/auth_screen.dart';
+import 'core/localization/app_localizations.dart';
 import 'core/settings/app_settings.dart';
 
 Future<void> main() async {
@@ -12,6 +15,7 @@ Future<void> main() async {
   await SupabaseConfig.init();
   await AppSettings.load();
   await NotificationService.init();
+  await ConnectivityService.instance.init();
   runApp(const MydApp());
 }
 
@@ -25,18 +29,20 @@ class MydApp extends StatelessWidget {
       animation: settings,
       builder: (context, _) => MaterialApp(
         navigatorKey: mydNavigatorKey,
-        title: 'MYD - Manage Your Day',
+        title: 'Manage Your Day',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
         themeMode: settings.themeMode,
         locale: settings.locale,
         supportedLocales: const [Locale('es'), Locale('en')],
-        localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        localizationsDelegates: [
+          AppLocalizations.delegate,
+          ...GlobalMaterialLocalizations.delegates,
+        ],
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(settings.textScale),
-          ),
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: TextScaler.linear(settings.textScale)),
           child: child!,
         ),
         home: const AuthGate(),

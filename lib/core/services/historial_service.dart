@@ -20,7 +20,9 @@ enum FiltroHistorial { todo, finanzas, tareas, metas }
 
 class HistorialService {
   static Future<List<HistorialItem>> cargar({required DateTime desde}) async {
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+    final userId = user.id;
     final desdeIso = desde.toIso8601String();
     final items = <HistorialItem>[];
 

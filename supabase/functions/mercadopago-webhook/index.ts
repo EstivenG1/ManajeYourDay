@@ -1,9 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import type {
+  BillingClient,
+  BillingDatabase,
+  ProviderSubscriptionStatus,
+} from "../_shared/billing_database.ts";
 
 type ProviderSubscription = {
   id?: unknown;
   status?: unknown;
   external_reference?: unknown;
+  preapproval_plan_id?: unknown;
   auto_recurring?: {
     frequency?: unknown;
     frequency_type?: unknown;
@@ -73,7 +79,7 @@ async function signatureMatches(
   return difference === 0;
 }
 
-function providerStatus(value: unknown): string | null {
+function providerStatus(value: unknown): ProviderSubscriptionStatus | null {
   switch (value) {
     case "pending":
     case "authorized":
@@ -89,8 +95,125 @@ function providerStatus(value: unknown): string | null {
   }
 }
 
+async function syncAuthorizedSubscriptionPayment(
+  adminClient: BillingClient,
+  accessToken: string,
+  payment: AuthorizedPayment,
+  paidAmount: number,
+): Promise<Response> {
+  const providerId = payment.preapproval_id;
+  if (typeof providerId !== "string") {
+    return jsonResponse({ error: "Invalid authorized payment data" }, 422);
+  }
+
+  const { data: current, error: lookupError } = await adminClient
+    .from("billing_subscriptions")
+    .select(
+      "id, provider_subscription_id, provider_plan_id, external_reference, amount_cop, billing_period, current_period_end, status, trial_days, trial_started_at",
+    )
+    .eq("provider_subscription_id", providerId)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("mercadopago-webhook: could not find paid subscription", {
+      error: lookupError.message,
+    });
+    return jsonResponse({ error: "Could not reconcile subscription payment" }, 500);
+  }
+  if (!current) return jsonResponse({ received: true }, 200);
+  if (
+    current.provider_subscription_id !== providerId ||
+    current.amount_cop !== paidAmount
+  ) {
+    console.error("mercadopago-webhook: payment does not match subscription", {
+      recordId: current.id,
+    });
+    return jsonResponse({ error: "Payment does not match subscription" }, 422);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `https://api.mercadopago.com/preapproval/${encodeURIComponent(providerId)}`,
+      {
+        headers: { Authorization: "Bearer " + accessToken },
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+  } catch (error) {
+    console.error("mercadopago-webhook: paid subscription lookup failed", {
+      recordId: current.id,
+      error: error instanceof Error ? error.message : "unknown error",
+    });
+    return jsonResponse({ error: "Could not verify paid subscription" }, 502);
+  }
+  if (!response.ok) {
+    console.error("mercadopago-webhook: paid subscription lookup rejected", {
+      recordId: current.id,
+      status: response.status,
+    });
+    return jsonResponse({ error: "Could not verify paid subscription" }, 502);
+  }
+
+  let provider: ProviderSubscription;
+  try {
+    provider = await response.json();
+  } catch {
+    return jsonResponse({ error: "Invalid paid subscription response" }, 502);
+  }
+  const status = providerStatus(provider.status);
+  const recurring = provider.auto_recurring;
+  if (
+    provider.id !== providerId ||
+    (current.provider_plan_id !== null &&
+      provider.preapproval_plan_id !== current.provider_plan_id) ||
+    (current.provider_plan_id === null &&
+      provider.external_reference !== current.external_reference) ||
+    !status ||
+    recurring?.frequency !== (current.billing_period === "annual" ? 12 : 1) ||
+    recurring.frequency_type !== "months" ||
+    recurring.transaction_amount !== current.amount_cop ||
+    recurring.currency_id !== "COP"
+  ) {
+    console.error("mercadopago-webhook: paid subscription does not match local data", {
+      recordId: current.id,
+    });
+    return jsonResponse({ error: "Subscription does not match payment" }, 422);
+  }
+
+  let currentPeriodEnd = current.current_period_end as string | null;
+  if (status === "cancelled") {
+    currentPeriodEnd = new Date().toISOString();
+  } else if (typeof provider.next_payment_date === "string") {
+    const parsedDate = new Date(provider.next_payment_date);
+    if (!Number.isFinite(parsedDate.getTime())) {
+      return jsonResponse({ error: "Invalid subscription period" }, 422);
+    }
+    currentPeriodEnd = parsedDate.toISOString();
+  } else {
+    currentPeriodEnd = null;
+  }
+
+  const { error: updateError } = await adminClient
+    .from("billing_subscriptions")
+    .update({
+      status,
+      current_period_end: currentPeriodEnd,
+    })
+    .eq("id", current.id)
+    .neq("status", "cancelled");
+  if (updateError) {
+    console.error("mercadopago-webhook: could not update paid subscription period", {
+      recordId: current.id,
+      error: updateError.message,
+    });
+    return jsonResponse({ error: "Could not update subscription period" }, 500);
+  }
+
+  return jsonResponse({ received: true }, 200);
+}
+
 async function finalizeUpgradeDiscount(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: BillingClient,
   accessToken: string,
   paymentId: string,
 ): Promise<Response> {
@@ -151,7 +274,14 @@ async function finalizeUpgradeDiscount(
     });
     return jsonResponse({ error: "Could not reconcile upgrade payment" }, 500);
   }
-  if (!current) return jsonResponse({ received: true }, 200);
+  if (!current) {
+    return await syncAuthorizedSubscriptionPayment(
+      adminClient,
+      accessToken,
+      payment,
+      paidAmount,
+    );
+  }
   if (
     current.regular_amount_cop === null ||
     paidAmount !== current.amount_cop ||
@@ -253,7 +383,7 @@ async function finalizeUpgradeDiscount(
       updatedSubscription.id !== current.provider_subscription_id ||
       updatedSubscription.auto_recurring?.transaction_amount !==
         current.regular_amount_cop ||
-      updatedSubscription.auto_recurring.currency_id !== "COP"
+      updatedSubscription.auto_recurring?.currency_id !== "COP"
     ) {
       console.error("mercadopago-webhook: regular Premium price was not confirmed", {
         recordId: current.id,
@@ -332,7 +462,7 @@ Deno.serve(async (request: Request) => {
     (typeof notification.action === "string" &&
       notification.action.startsWith("subscription_authorized_payment"))
   ) {
-    const adminClient = createClient(url, serviceRoleKey, {
+    const adminClient = createClient<BillingDatabase>(url, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     return await finalizeUpgradeDiscount(adminClient, accessToken, dataId);
@@ -376,10 +506,14 @@ Deno.serve(async (request: Request) => {
   const status = providerStatus(subscription.status);
   const externalReference = subscription.external_reference;
   const providerId = subscription.id;
+  const providerPlanId = subscription.preapproval_plan_id;
   const recurring = subscription.auto_recurring;
   if (
     !status ||
-    typeof externalReference !== "string" ||
+    (providerPlanId == null && typeof externalReference !== "string") ||
+    (providerPlanId !== undefined &&
+      providerPlanId !== null &&
+      typeof providerPlanId !== "string") ||
     typeof providerId !== "string" ||
     providerId !== dataId ||
     typeof recurring?.frequency !== "number" ||
@@ -393,16 +527,30 @@ Deno.serve(async (request: Request) => {
     return jsonResponse({ error: "Invalid subscription data" }, 422);
   }
 
-  const adminClient = createClient(url, serviceRoleKey, {
+  const adminClient = createClient<BillingDatabase>(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: current, error: lookupError } = await adminClient
-    .from("billing_subscriptions")
-    .select(
-      "id, provider_subscription_id, amount_cop, billing_period, current_period_end",
-    )
-    .eq("external_reference", externalReference)
-    .maybeSingle();
+  const lookup = typeof providerPlanId === "string"
+    ? adminClient
+      .from("billing_subscriptions")
+      .select(
+        "id, provider_subscription_id, provider_plan_id, external_reference, amount_cop, billing_period, current_period_end, status, trial_days, trial_started_at",
+      )
+      .eq("provider_plan_id", providerPlanId)
+      .maybeSingle()
+    : typeof externalReference === "string"
+    ? adminClient
+      .from("billing_subscriptions")
+      .select(
+        "id, provider_subscription_id, provider_plan_id, external_reference, amount_cop, billing_period, current_period_end, status, trial_days, trial_started_at",
+      )
+      .eq("external_reference", externalReference)
+      .maybeSingle()
+    : null;
+  if (!lookup) {
+    return jsonResponse({ error: "Invalid subscription data" }, 422);
+  }
+  const { data: current, error: lookupError } = await lookup;
   if (lookupError) {
     console.error("mercadopago-webhook: could not find local subscription", {
       error: lookupError.message,
@@ -413,6 +561,12 @@ Deno.serve(async (request: Request) => {
   if (
     current.amount_cop !== recurring.transaction_amount ||
     recurring.frequency !== (current.billing_period === "annual" ? 12 : 1) ||
+    (typeof providerPlanId !== "string" &&
+      externalReference !== current.external_reference) ||
+    (typeof providerPlanId === "string" &&
+      current.provider_plan_id !== providerPlanId) ||
+    (typeof providerPlanId !== "string" &&
+      current.provider_plan_id !== null) ||
     (current.provider_subscription_id !== null &&
       current.provider_subscription_id !== providerId)
   ) {
@@ -421,15 +575,23 @@ Deno.serve(async (request: Request) => {
     });
     return jsonResponse({ error: "Subscription does not match checkout" }, 422);
   }
+  if (current.status === "checkout_failed") {
+    console.warn("mercadopago-webhook: reconciling a previously failed checkout", {
+      recordId: current.id,
+      providerStatus: status,
+    });
+  }
 
   let currentPeriodEnd = current.current_period_end as string | null;
-  if (typeof subscription.next_payment_date === "string") {
+  if (status === "cancelled") {
+    currentPeriodEnd = new Date().toISOString();
+  } else if (typeof subscription.next_payment_date === "string") {
     const parsedDate = new Date(subscription.next_payment_date);
     if (!Number.isFinite(parsedDate.getTime())) {
       return jsonResponse({ error: "Invalid subscription period" }, 422);
     }
     currentPeriodEnd = parsedDate.toISOString();
-  } else if (status !== "cancelled") {
+  } else {
     currentPeriodEnd = null;
   }
 
@@ -439,8 +601,13 @@ Deno.serve(async (request: Request) => {
       provider_subscription_id: providerId,
       status,
       current_period_end: currentPeriodEnd,
+      trial_started_at: current.trial_days === 7 &&
+          status === "authorized" && current.trial_started_at === null
+        ? new Date().toISOString()
+        : current.trial_started_at,
     })
-    .eq("id", current.id);
+    .eq("id", current.id)
+    .neq("status", "cancelled");
   if (updateError) {
     console.error("mercadopago-webhook: could not update subscription", {
       recordId: current.id,

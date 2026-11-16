@@ -1,4 +1,5 @@
 import '../supabase/supabase_config.dart';
+import 'finance_repository.dart';
 
 enum PeriodoReporte { hoy, semana, mes }
 
@@ -62,10 +63,12 @@ class ReporteData {
     required this.conclusiones,
   });
 
-  double? get variacionIngresos =>
-      ingresosAnterior == 0 ? null : ((ingresos - ingresosAnterior) / ingresosAnterior) * 100;
-  double? get variacionGastos =>
-      gastosAnterior == 0 ? null : ((gastos - gastosAnterior) / gastosAnterior) * 100;
+  double? get variacionIngresos => ingresosAnterior == 0
+      ? null
+      : ((ingresos - ingresosAnterior) / ingresosAnterior) * 100;
+  double? get variacionGastos => gastosAnterior == 0
+      ? null
+      : ((gastos - gastosAnterior) / gastosAnterior) * 100;
 }
 
 class ReportesService {
@@ -80,7 +83,9 @@ class ReportesService {
     PeriodoReporte periodo, {
     bool english = false,
   }) async {
-    final userId = supabase.auth.currentUser!.id;
+    final user = supabase.auth.currentUser;
+    if (user == null) throw StateError('Usuario no autenticado');
+    final userId = user.id;
     final hoy = DateTime.now();
 
     late DateTime inicioActual;
@@ -112,7 +117,7 @@ class ReportesService {
     // así con una sola consulta cubrimos actual + anterior para comparar.
     final movimientos = <Map<String, dynamic>>[];
     const tamanoPagina = 500;
-    for (var inicio = 0;; inicio += tamanoPagina) {
+    for (var inicio = 0; ; inicio += tamanoPagina) {
       final pagina = await supabase
           .from('movimientos')
           .select('tipo, monto, fecha, categorias(nombre)')
@@ -139,14 +144,17 @@ class ReportesService {
       final esIngreso = m['tipo'] == 'ingreso';
       final enPeriodoActual = !fecha.isBefore(inicioActual);
 
-      if (fecha.year == hoy.year && fecha.month == hoy.month && fecha.day == hoy.day) {
+      if (fecha.year == hoy.year &&
+          fecha.month == hoy.month &&
+          fecha.day == hoy.day) {
         movimientosHoy.add(Map<String, dynamic>.from(m));
       }
 
       if (fecha.month == hoy.month && fecha.year == hoy.year) {
         actividadPorDia[fecha.day] = (actividadPorDia[fecha.day] ?? 0) + 1;
         if (!esIngreso) {
-          gastosPorDiaDelMes[fecha.day] = (gastosPorDiaDelMes[fecha.day] ?? 0) + monto;
+          gastosPorDiaDelMes[fecha.day] =
+              (gastosPorDiaDelMes[fecha.day] ?? 0) + monto;
         }
       }
 
@@ -158,7 +166,8 @@ class ReportesService {
           final cat = m['categorias']?['nombre'] ?? 'Otros';
           categorias[cat] = (categorias[cat] ?? 0) + monto;
         }
-      } else if (!fecha.isBefore(inicioAnterior) && fecha.isBefore(finAnterior)) {
+      } else if (!fecha.isBefore(inicioAnterior) &&
+          fecha.isBefore(finAnterior)) {
         if (esIngreso) {
           ingAnterior += monto;
         } else {
@@ -250,7 +259,10 @@ class ReportesService {
       if (esCompletada) completadas++;
 
       final actual = porPrioridad[prioridad] ?? (0, 0);
-      porPrioridad[prioridad] = (actual.$1 + (esCompletada ? 1 : 0), actual.$2 + 1);
+      porPrioridad[prioridad] = (
+        actual.$1 + (esCompletada ? 1 : 0),
+        actual.$2 + 1,
+      );
 
       if (estado == 'pendiente') {
         final limite = DateTime.parse(t['fecha_limite']);
@@ -272,49 +284,43 @@ class ReportesService {
     }
 
     // Tareas de hoy (por fecha_limite = hoy)
-    final tareasHoy = (tareas as List).where((t) {
-      final limite = DateTime.parse(t['fecha_limite']);
-      return limite.year == hoy.year && limite.month == hoy.month && limite.day == hoy.day;
-    }).map((t) => Map<String, dynamic>.from(t)).toList();
+    final tareasHoy = (tareas as List)
+        .where((t) {
+          final limite = DateTime.parse(t['fecha_limite']);
+          return limite.year == hoy.year &&
+              limite.month == hoy.month &&
+              limite.day == hoy.day;
+        })
+        .map((t) => Map<String, dynamic>.from(t))
+        .toList();
 
     // Mapa de calor: normaliza el conteo de actividad a niveles 0-4
-    final maxActividad =
-        actividadPorDia.values.isEmpty ? 1 : actividadPorDia.values.reduce((a, b) => a > b ? a : b);
+    final maxActividad = actividadPorDia.values.isEmpty
+        ? 1
+        : actividadPorDia.values.reduce((a, b) => a > b ? a : b);
     final mapaCalor = <int, int>{};
     actividadPorDia.forEach((dia, conteo) {
-      final nivel = maxActividad == 0 ? 0 : ((conteo / maxActividad) * 4).ceil().clamp(0, 4);
+      final nivel = maxActividad == 0
+          ? 0
+          : ((conteo / maxActividad) * 4).ceil().clamp(0, 4);
       mapaCalor[dia] = nivel;
     });
 
     // Presupuestos activos con su consumo
     final presupuestosRaw = await supabase
         .from('presupuestos')
-        .select('id, monto_limite, categoria_id, fecha_inicio, fecha_fin, categorias(nombre)')
+        .select(
+          'id, monto_limite, categoria_id, fecha_inicio, fecha_fin, categorias(nombre)',
+        )
         .eq('usuario_id', userId)
         .lte('fecha_inicio', fmt(hoy))
         .gte('fecha_fin', fmt(hoy));
 
     final presupuestos = <Map<String, dynamic>>[];
+    final gastosPorPresupuesto = await FinanceRepository(supabase)
+        .loadBudgetSpending();
     for (final p in presupuestosRaw as List) {
-      var gastado = 0.0;
-      for (var inicio = 0;; inicio += tamanoPagina) {
-        final gastosPresupuesto = await supabase
-            .from('movimientos')
-            .select('monto')
-            .eq('usuario_id', userId)
-            .eq('categoria_id', p['categoria_id'])
-            .eq('tipo', 'gasto')
-            .gte('fecha', p['fecha_inicio'])
-            .lte('fecha', p['fecha_fin'])
-            .order('id')
-            .range(inicio, inicio + tamanoPagina - 1);
-        gastado += (gastosPresupuesto as List).fold<double>(
-          0,
-          (total, movimiento) =>
-              total + (movimiento['monto'] as num).toDouble(),
-        );
-        if (gastosPresupuesto.length < tamanoPagina) break;
-      }
+      final gastado = gastosPorPresupuesto[p['id'].toString()] ?? 0;
       presupuestos.add({
         'nombre': p['categorias']?['nombre'] ?? 'General',
         'limite': (p['monto_limite'] as num).toDouble(),
@@ -329,11 +335,15 @@ class ReportesService {
         .eq('usuario_id', userId)
         .eq('estado', 'activa');
 
-    final metas = (metasRaw as List).map((m) => {
-          'nombre': m['nombre'],
-          'objetivo': (m['monto_objetivo'] as num).toDouble(),
-          'actual': (m['monto_actual'] as num).toDouble(),
-        }).toList();
+    final metas = (metasRaw as List)
+        .map(
+          (m) => {
+            'nombre': m['nombre'],
+            'objetivo': (m['monto_objetivo'] as num).toDouble(),
+            'actual': (m['monto_actual'] as num).toDouble(),
+          },
+        )
+        .toList();
 
     final dias = hoy.difference(inicioActual).inDays + 1;
     final gastoPromedioDiario = dias == 0 ? gasActual : gasActual / dias;
@@ -349,7 +359,9 @@ class ReportesService {
             : '💸 "${top.key}" es tu categoría con más gasto: ${pct.toStringAsFixed(0)}% del total.',
       );
     }
-    final varGastos = gasAnterior == 0 ? null : ((gasActual - gasAnterior) / gasAnterior) * 100;
+    final varGastos = gasAnterior == 0
+        ? null
+        : ((gasActual - gasAnterior) / gasAnterior) * 100;
     if (varGastos != null) {
       final subio = varGastos >= 0;
       conclusiones.add(
@@ -384,7 +396,9 @@ class ReportesService {
       tareasVencidas: tareasVencidas,
       tareaMasVencidaTitulo: tareaMasVencidaTitulo,
       gastoPromedioDiario: gastoPromedioDiario,
-      categoriaTop: categoriasOrdenadas.isNotEmpty ? categoriasOrdenadas.first.key : null,
+      categoriaTop: categoriasOrdenadas.isNotEmpty
+          ? categoriasOrdenadas.first.key
+          : null,
       etiquetasSerie: etiquetas,
       ingresosPorSerie: ingresosSerie,
       gastosPorSerie: gastosSerie,

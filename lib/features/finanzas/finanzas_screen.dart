@@ -5,6 +5,7 @@ import '../../core/formatters/category_emoji.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/finance_repository.dart';
 import 'transaction_form_screen.dart';
 import '../metas/metas_screen.dart';
 import 'presupuestos_screen.dart';
@@ -14,7 +15,14 @@ import 'transaction_location_card.dart';
 import 'transaction_receipt_view.dart';
 
 class FinanzasScreen extends StatefulWidget {
-  const FinanzasScreen({super.key});
+  const FinanzasScreen({
+    super.key,
+    this.onPrimerIngresoRegistrado,
+    this.onFinanzasActivadas,
+  });
+
+  final VoidCallback? onPrimerIngresoRegistrado;
+  final VoidCallback? onFinanzasActivadas;
 
   @override
   State<FinanzasScreen> createState() => _FinanzasScreenState();
@@ -22,10 +30,13 @@ class FinanzasScreen extends StatefulWidget {
 
 class _FinanzasScreenState extends State<FinanzasScreen> {
   bool _cargando = true;
+  bool _finanzasActivas = true;
+  bool _activandoFinanzas = false;
   String? _errorCarga;
   List<Map<String, dynamic>> _movimientos = [];
   double _ingresos = 0;
   double _gastos = 0;
+  final FinanceRepository _financeRepository = FinanceRepository(supabase);
 
   @override
   void initState() {
@@ -39,45 +50,33 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
       _errorCarga = null;
     });
     try {
-      final userId = supabase.auth.currentUser!.id;
-      final data = await supabase
-          .from('movimientos')
-          .select('*, categorias(nombre, icono)')
-          .eq('usuario_id', userId)
-          .order('fecha', ascending: false)
-          .order('creado_en', ascending: false)
-          .limit(50);
-
-      final totales = <Map<String, dynamic>>[];
-      var inicio = 0;
-      const tamanoPagina = 500;
-      while (true) {
-        final pagina = await supabase
-            .from('movimientos')
-            .select('tipo, monto')
-            .eq('usuario_id', userId)
-            .order('id')
-            .range(inicio, inicio + tamanoPagina - 1);
-        totales.addAll(List<Map<String, dynamic>>.from(pagina));
-        if (pagina.length < tamanoPagina) break;
-        inicio += tamanoPagina;
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        throw StateError('A signed-in user is required to load finances.');
       }
-
-      double ingresos = 0, gastos = 0;
-      for (final m in totales) {
-        final monto = (m['monto'] as num).toDouble();
-        if (m['tipo'] == 'ingreso') {
-          ingresos += monto;
-        } else {
-          gastos += monto;
+      final perfil = await supabase
+          .from('perfiles')
+          .select('finanzas_activas')
+          .eq('id', user.id)
+          .single();
+      if (perfil['finanzas_activas'] != true) {
+        if (mounted) {
+          setState(() {
+            _finanzasActivas = false;
+            _cargando = false;
+            _errorCarga = null;
+          });
         }
+        return;
       }
+      final overview = await _financeRepository.loadOverview(user.id);
 
       if (mounted) {
         setState(() {
-          _movimientos = List<Map<String, dynamic>>.from(data);
-          _ingresos = ingresos;
-          _gastos = gastos;
+          _finanzasActivas = true;
+          _movimientos = overview.recentTransactions;
+          _ingresos = overview.totals.income;
+          _gastos = overview.totals.expenses;
           _cargando = false;
           _errorCarga = null;
         });
@@ -95,6 +94,7 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
   Future<void> _abrirFormulario({
     String tipoInicial = 'gasto',
     Map<String, dynamic>? movimiento,
+    bool guiarHaciaReportes = false,
   }) async {
     final resultado = await Navigator.push<bool>(
       context,
@@ -102,10 +102,135 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
         builder: (_) => TransactionFormScreen(
           tipoInicial: tipoInicial,
           movimiento: movimiento,
+          mostrarGuia: guiarHaciaReportes,
         ),
       ),
     );
-    if (resultado == true) _cargar();
+    if (resultado == true) {
+      await _cargar();
+      if (guiarHaciaReportes && mounted) {
+        final verReporte = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            icon: Icon(Icons.check_circle_outline, color: AppColors.green),
+            title: Text(
+              appText(
+                context,
+                '¡Primer ingreso guardado!',
+                'First income saved!',
+              ),
+            ),
+            content: Text(
+              appText(
+                context,
+                'Ahora revisa Reportes > Hoy para ver el movimiento. Si registras tus movimientos con constancia, también podrás entender tu comportamiento semanal y mensual.',
+                'Now open Reports > Today to see the transaction. With consistent tracking, you will also be able to understand your weekly and monthly patterns.',
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(appText(context, 'Después', 'Later')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(appText(context, 'Ver Hoy', 'View Today')),
+              ),
+            ],
+          ),
+        );
+        if (verReporte == true) widget.onPrimerIngresoRegistrado?.call();
+      }
+    }
+  }
+
+  Future<void> _activarFinanzas() async {
+    final activar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.account_balance_wallet_outlined),
+        title: Text(appText(context, '¿Activar Finanzas?', 'Enable Finance?')),
+        content: Text(
+          appText(
+            context,
+            'Podrás registrar ingresos y gastos, consultar balances y usar presupuestos, metas de ahorro y pagos recurrentes. Puedes seguir usando MYD solo para tus tareas si prefieres.',
+            'You can record income and expenses, review balances, and use budgets, savings goals, and recurring payments. You can keep using MYD just for tasks if you prefer.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(appText(context, 'Ahora no', 'Not now')),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(appText(context, 'Activar', 'Enable')),
+          ),
+        ],
+      ),
+    );
+    if (activar != true || !mounted) return;
+
+    setState(() => _activandoFinanzas = true);
+    try {
+      final user = supabase.auth.currentUser;
+      if (user == null) {
+        throw StateError('A signed-in user is required to enable finances.');
+      }
+      await supabase
+          .from('perfiles')
+          .update({'finanzas_activas': true})
+          .eq('id', user.id);
+      if (!mounted) return;
+      setState(() {
+        _finanzasActivas = true;
+        _activandoFinanzas = false;
+      });
+      widget.onFinanzasActivadas?.call();
+      await _cargar();
+
+      if (!mounted) return;
+      final iniciarGuia = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(
+            appText(context, 'Tu primer movimiento', 'Your first transaction'),
+          ),
+          content: Text(
+            appText(
+              context,
+              'Paso 1: registra un ingreso con su descripción, valor, categoría y fecha. Paso 2: al guardarlo, iremos a Reportes > Hoy para que veas cómo aparece. Más adelante podrás comparar tu actividad semanal y mensual.',
+              'Step 1: record income with a description, amount, category, and date. Step 2: after saving, we will open Reports > Today so you can see it. Later, you can compare your weekly and monthly activity.',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text(appText(context, 'Saltar guía', 'Skip guide')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(appText(context, 'Empezar', 'Start')),
+            ),
+          ],
+        ),
+      );
+      if (iniciarGuia == true && mounted) {
+        await _abrirFormulario(
+          tipoInicial: 'ingreso',
+          guiarHaciaReportes: true,
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _activandoFinanzas = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No se pudieron activar las finanzas: $error'),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _eliminar(Map<String, dynamic> mov) async {
@@ -146,6 +271,8 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
           ? Center(child: CircularProgressIndicator(color: AppColors.gold))
           : _errorCarga != null
           ? _estadoErrorCarga()
+          : !_finanzasActivas
+          ? _estadoFinanzasDesactivadas()
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -227,6 +354,78 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _estadoFinanzasDesactivadas() {
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 520),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(AppRadii.xl3),
+            border: Border.all(color: AppColors.borderSoft),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: AppColors.goldSoftBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: AppColors.goldDeep,
+                  size: 36,
+                ),
+              ),
+              const SizedBox(height: 18),
+              Text(
+                appText(
+                  context,
+                  'Tus finanzas, a tu ritmo',
+                  'Your finances, your choice',
+                ),
+                style: AppTypography.screenTitle,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                appText(
+                  context,
+                  'Activa esta sección cuando quieras llevar el registro de ingresos, gastos, presupuestos, metas y pagos recurrentes. MYD también funciona para organizar tus tareas y recordatorios.',
+                  'Enable this section whenever you want to track income, expenses, budgets, goals, and recurring payments. MYD also works for organizing tasks and reminders.',
+                ),
+                style: AppTypography.secondary,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _activandoFinanzas ? null : _activarFinanzas,
+                  icon: _activandoFinanzas
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.arrow_forward_rounded),
+                  label: Text(
+                    appText(context, 'Activar Finanzas', 'Enable Finance'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -632,72 +831,82 @@ class _FinanzasScreenState extends State<FinanzasScreen> {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
+      child: Material(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(finanzas.radioTarjeta),
-        border: Border.all(
-          color: AppColors.borderSoft,
-          width: AppRadii.borderWidth,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(finanzas.radioTarjeta),
+          onTap: () => _mostrarDetalleMovimiento(m, finanzas),
+          child: Container(
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(AppRadii.xl),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              emojiCategoria(categoria, tipo: esIngreso ? 'ingreso' : 'gasto'),
-              style: const TextStyle(fontSize: 19),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => _mostrarDetalleMovimiento(m, finanzas),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    m['descripcion']?.toString().isNotEmpty == true
-                        ? m['descripcion']
-                        : categoria,
-                    style: AppTypography.itemTitle,
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    '$categoria · $fechaTexto',
-                    style: AppTypography.secondary.copyWith(
-                      color: AppColors.textTertiary,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              borderRadius: BorderRadius.circular(finanzas.radioTarjeta),
+              border: Border.all(
+                color: AppColors.borderSoft,
+                width: AppRadii.borderWidth,
               ),
             ),
-          ),
-          Text(
-            '${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(AppRadii.xl),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    emojiCategoria(
+                      categoria,
+                      tipo: esIngreso ? 'ingreso' : 'gasto',
+                    ),
+                    style: const TextStyle(fontSize: 19),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        m['descripcion']?.toString().isNotEmpty == true
+                            ? m['descripcion']
+                            : categoria,
+                        style: AppTypography.itemTitle,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$categoria · $fechaTexto',
+                        style: AppTypography.secondary.copyWith(
+                          color: AppColors.textTertiary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '${esIngreso ? '+' : '-'}${formatearMonto(m['monto'])}',
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline,
+                    color: AppColors.textTertiary,
+                    size: 18,
+                  ),
+                  onPressed: () => _eliminar(m),
+                  tooltip: 'Eliminar movimiento',
+                ),
+              ],
             ),
           ),
-          IconButton(
-            icon: Icon(
-              Icons.delete_outline,
-              color: AppColors.textTertiary,
-              size: 18,
-            ),
-            onPressed: () => _eliminar(m),
-          ),
-        ],
+        ),
       ),
     );
   }

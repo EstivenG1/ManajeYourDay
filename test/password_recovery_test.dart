@@ -1,11 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myd/core/supabase/supabase_config.dart';
-import 'package:myd/core/theme/app_theme.dart';
-import 'package:myd/features/auth/password_recovery_screen.dart';
+import 'package:manage_your_day/core/supabase/supabase_config.dart';
+import 'package:manage_your_day/core/theme/app_theme.dart';
+import 'package:manage_your_day/features/auth/password_recovery_screen.dart';
 
 void main() {
+  test('web password recovery returns to the current web app URL', () {
+    final redirect = SupabaseConfig.passwordRecoveryRedirectFor(
+      isWeb: true,
+      currentUri: Uri.parse(
+        'https://estiveng1.github.io/ManajeYourDay/?old=state#/perfil',
+      ),
+    );
+
+    expect(redirect, 'https://estiveng1.github.io/ManajeYourDay/');
+  });
+
+  test('native password recovery keeps the app deep link', () {
+    final redirect = SupabaseConfig.passwordRecoveryRedirectFor(
+      isWeb: false,
+      currentUri: Uri.parse('https://example.test/'),
+    );
+
+    expect(redirect, SupabaseConfig.passwordRecoveryRedirect);
+  });
+
+  test('web signup confirmation returns to the current web app URL', () {
+    final redirect = SupabaseConfig.authCallbackRedirectFor(
+      isWeb: true,
+      currentUri: Uri.parse(
+        'https://estiveng1.github.io/ManajeYourDay/?old=state#/perfil',
+      ),
+    );
+
+    expect(redirect, 'https://estiveng1.github.io/ManajeYourDay/');
+  });
+
+  test('native signup confirmation uses the app deep link', () {
+    final redirect = SupabaseConfig.authCallbackRedirectFor(
+      isWeb: false,
+      currentUri: Uri.parse('https://example.test/'),
+    );
+
+    expect(redirect, SupabaseConfig.authCallbackRedirect);
+  });
+
   test('recovery deep link remains detectable before AuthGate subscribes', () {
     final recoveryUri = Uri.parse(
       'io.supabase.myd://reset-password?code=verification-code',
@@ -18,7 +58,7 @@ void main() {
 
   test('other authentication callbacks are still handled', () {
     final callbackUri = Uri.parse(
-      'io.supabase.myd://login-callback?code=oauth-code',
+      'io.supabase.myd://auth-callback?code=signup-code',
     );
 
     expect(SupabaseConfig.detectAuthRedirect(callbackUri), isTrue);

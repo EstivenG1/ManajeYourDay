@@ -20,6 +20,7 @@ class TutorialStep {
   final IconData icon;
   final Color color;
   final GlobalKey target;
+  final String? nextLabel;
 
   const TutorialStep({
     required this.title,
@@ -27,6 +28,7 @@ class TutorialStep {
     required this.icon,
     required this.color,
     required this.target,
+    this.nextLabel,
   });
 }
 

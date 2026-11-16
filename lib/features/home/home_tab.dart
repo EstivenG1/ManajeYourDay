@@ -1,29 +1,42 @@
 import 'package:flutter/material.dart';
 
 import '../../core/localization/app_text.dart';
+import '../../core/services/plan_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import '../../core/services/home_utils.dart';
+import '../../core/services/finance_repository.dart';
 
 class HomeTab extends StatefulWidget {
   final String? nombre;
   final VoidCallback onVerTareas;
   final VoidCallback onVerFinanzas;
+  final VoidCallback onVerPlanes;
+  final int planRefreshToken;
 
   const HomeTab({
     super.key,
     required this.nombre,
     required this.onVerTareas,
     required this.onVerFinanzas,
+    required this.onVerPlanes,
+    required this.planRefreshToken,
   });
 
   @override
   State<HomeTab> createState() => _HomeTabState();
 }
 
-class _HomeTabState extends State<HomeTab> {
+class _HomeTabState extends State<HomeTab> with WidgetsBindingObserver {
   bool _cargando = true;
   String? _errorCarga;
+  bool _cargandoPlan = true;
+  bool _finanzasActivas = true;
+  bool _actualizandoPlan = false;
+  bool _actualizarPlanPendiente = false;
+  bool _sincronizacionPlanPendiente = false;
+  PlanTier? _plan;
+  PlanSubscriptionDetails? _suscripcion;
   double _ingresosMes = 0;
   double _gastosMes = 0;
   double _gastosMesAnterior = 0;
@@ -54,32 +67,108 @@ class _HomeTabState extends State<HomeTab> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _cargarDatos();
+    _cargarPlanHome(sincronizar: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.planRefreshToken != widget.planRefreshToken) {
+      _cargarDatos();
+      _cargarPlanHome(sincronizar: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _cargarPlanHome(sincronizar: true);
+    }
+  }
+
+  Future<void> _cargarPlanHome({required bool sincronizar}) async {
+    if (_actualizandoPlan) {
+      _actualizarPlanPendiente = true;
+      _sincronizacionPlanPendiente =
+          _sincronizacionPlanPendiente || sincronizar;
+      return;
+    }
+    _actualizandoPlan = true;
+    try {
+      if (sincronizar) {
+        try {
+          await PlanService.syncCurrentUserSubscription();
+        } catch (error) {
+          debugPrint('Unable to sync subscription from home: $error');
+        }
+      }
+      final plan = await PlanService.loadCurrentUserPlan();
+      final subscription = await PlanService.loadCurrentUserSubscription();
+      if (!mounted) return;
+      setState(() {
+        _plan = plan;
+        _suscripcion = subscription;
+        _cargandoPlan = false;
+      });
+    } catch (error) {
+      debugPrint('Unable to load current plan on home: $error');
+      if (mounted) setState(() => _cargandoPlan = false);
+    } finally {
+      _actualizandoPlan = false;
+      if (_actualizarPlanPendiente && mounted) {
+        final sincronizar = _sincronizacionPlanPendiente;
+        _actualizarPlanPendiente = false;
+        _sincronizacionPlanPendiente = false;
+        _cargarPlanHome(sincronizar: sincronizar);
+      }
+    }
+  }
+
+  Future<void> _actualizarInicio() async {
+    await Future.wait([_cargarDatos(), _cargarPlanHome(sincronizar: true)]);
   }
 
   Future<void> _cargarDatos() async {
     setState(() => _cargando = true);
     try {
-      final userId = supabase.auth.currentUser!.id;
+      final user = supabase.auth.currentUser;
+      if (user == null) return;
+      final userId = user.id;
+      final perfil = await supabase
+          .from('perfiles')
+          .select('finanzas_activas')
+          .eq('id', userId)
+          .single();
+      final finanzasActivas = perfil['finanzas_activas'] == true;
       final ahora = DateTime.now();
       final inicioMes = DateTime(ahora.year, ahora.month, 1);
       final inicioMesAnterior = DateTime(ahora.year, ahora.month - 1, 1);
       final movimientos = <Map<String, dynamic>>[];
       const tamanoPagina = 500;
-      for (var inicio = 0; ; inicio += tamanoPagina) {
-        final pagina = await supabase
-            .from('movimientos')
-            .select('tipo, monto, fecha')
-            .eq('usuario_id', userId)
-            .gte(
-              'fecha',
-              '${inicioMesAnterior.year}-${inicioMesAnterior.month.toString().padLeft(2, '0')}-01',
-            )
-            .lte('fecha', _fechaTexto(ahora))
-            .order('id')
-            .range(inicio, inicio + tamanoPagina - 1);
-        movimientos.addAll(List<Map<String, dynamic>>.from(pagina));
-        if (pagina.length < tamanoPagina) break;
+      if (finanzasActivas) {
+        for (var inicio = 0; ; inicio += tamanoPagina) {
+          final pagina = await supabase
+              .from('movimientos')
+              .select('tipo, monto, fecha')
+              .eq('usuario_id', userId)
+              .gte(
+                'fecha',
+                '${inicioMesAnterior.year}-${inicioMesAnterior.month.toString().padLeft(2, '0')}-01',
+              )
+              .lte('fecha', _fechaTexto(ahora))
+              .order('id')
+              .range(inicio, inicio + tamanoPagina - 1);
+          movimientos.addAll(List<Map<String, dynamic>>.from(pagina));
+          if (pagina.length < tamanoPagina) break;
+        }
       }
 
       double ingresos = 0;
@@ -102,44 +191,34 @@ class _HomeTabState extends State<HomeTab> {
         }
       }
 
-      final presupuestos = await supabase
-          .from('presupuestos')
-          .select(
-            'monto_limite, categoria_id, fecha_inicio, fecha_fin, categorias(nombre)',
-          )
-          .eq('usuario_id', userId)
-          .lte('fecha_inicio', _fechaTexto(ahora))
-          .gte('fecha_fin', _fechaTexto(ahora));
+      final presupuestos = finanzasActivas
+          ? await supabase
+                .from('presupuestos')
+                .select(
+                  'id, monto_limite, categoria_id, fecha_inicio, fecha_fin, categorias(nombre)',
+                )
+                .eq('usuario_id', userId)
+                .lte('fecha_inicio', _fechaTexto(ahora))
+                .gte('fecha_fin', _fechaTexto(ahora))
+          : <Map<String, dynamic>>[];
+      final gastosPorPresupuesto = finanzasActivas
+          ? await FinanceRepository(supabase).loadBudgetSpending()
+          : <String, double>{};
       var totalLimites = 0.0;
       var totalGastadoPresupuestos = 0.0;
       final alertasPresupuesto = <Map<String, dynamic>>[];
       for (final presupuesto in presupuestos as List) {
         totalLimites += (presupuesto['monto_limite'] as num).toDouble();
-        for (var inicio = 0; ; inicio += tamanoPagina) {
-          final gastado = await supabase
-              .from('movimientos')
-              .select('monto')
-              .eq('usuario_id', userId)
-              .eq('categoria_id', presupuesto['categoria_id'])
-              .eq('tipo', 'gasto')
-              .gte('fecha', presupuesto['fecha_inicio'])
-              .lte('fecha', presupuesto['fecha_fin'])
-              .order('id')
-              .range(inicio, inicio + tamanoPagina - 1);
-          final totalCategoria = (gastado as List).fold<double>(
-            0,
-            (sum, item) => sum + (item['monto'] as num).toDouble(),
-          );
-          totalGastadoPresupuestos += totalCategoria;
-          final limite = (presupuesto['monto_limite'] as num).toDouble();
-          final porcentajeCategoria = totalCategoria / limite * 100;
-          if (porcentajeCategoria >= 75) {
-            alertasPresupuesto.add({
-              'nombre': presupuesto['categorias']?['nombre'] ?? 'Categoría',
-              'porcentaje': porcentajeCategoria,
-            });
-          }
-          if (gastado.length < tamanoPagina) break;
+        final totalCategoria =
+            gastosPorPresupuesto[presupuesto['id'].toString()] ?? 0;
+        totalGastadoPresupuestos += totalCategoria;
+        final limite = (presupuesto['monto_limite'] as num).toDouble();
+        final porcentajeCategoria = totalCategoria / limite * 100;
+        if (porcentajeCategoria >= 75) {
+          alertasPresupuesto.add({
+            'nombre': presupuesto['categorias']?['nombre'] ?? 'Categoría',
+            'porcentaje': porcentajeCategoria,
+          });
         }
       }
       alertasPresupuesto.sort(
@@ -157,11 +236,13 @@ class _HomeTabState extends State<HomeTab> {
           .order('fecha_limite', ascending: true)
           .limit(5);
 
-      final metasActivas = await supabase
-          .from('metas_ahorro')
-          .select('nombre, monto_objetivo, monto_actual, estado')
-          .eq('usuario_id', userId)
-          .eq('estado', 'activa');
+      final metasActivas = finanzasActivas
+          ? await supabase
+                .from('metas_ahorro')
+                .select('nombre, monto_objetivo, monto_actual, estado')
+                .eq('usuario_id', userId)
+                .eq('estado', 'activa')
+          : <Map<String, dynamic>>[];
       final resumenMetas = calcularResumenMetas(
         List<Map<String, dynamic>>.from(metasActivas),
       );
@@ -195,6 +276,7 @@ class _HomeTabState extends State<HomeTab> {
 
       if (!mounted) return;
       setState(() {
+        _finanzasActivas = finanzasActivas;
         _ingresosMes = ingresos;
         _gastosMes = gastos;
         _gastosMesAnterior = gastosAnteriores;
@@ -227,6 +309,35 @@ class _HomeTabState extends State<HomeTab> {
 
   String _fechaTexto(DateTime fecha) =>
       '${fecha.year}-${fecha.month.toString().padLeft(2, '0')}-${fecha.day.toString().padLeft(2, '0')}';
+
+  Widget _botonAccionInicio({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(54),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -271,7 +382,7 @@ class _HomeTabState extends State<HomeTab> {
 
     return RefreshIndicator(
       color: AppColors.gold,
-      onRefresh: _cargarDatos,
+      onRefresh: _actualizarInicio,
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -285,39 +396,72 @@ class _HomeTabState extends State<HomeTab> {
             ),
             style: AppTypography.greeting,
           ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: widget.onVerFinanzas,
-                  icon: const Icon(Icons.add_card_rounded),
-                  label: Text(appText(context, 'Registrar movimiento', 'Add transaction')),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: widget.onVerTareas,
-                  icon: const Icon(Icons.add_task_rounded),
-                  label: Text(appText(context, 'Nueva tarea', 'New task')),
-                ),
-              ),
-            ],
+          const SizedBox(height: 10),
+          _insigniaPlan(),
+          const SizedBox(height: 18),
+          if (_suscripcion != null &&
+              (_suscripcion!.isCheckoutPending ||
+                  _suscripcion!.isPaymentPending)) ...[
+            _tarjetaCompraPendiente(_suscripcion!),
+            const SizedBox(height: 18),
+          ],
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final botonFinanzas = _botonAccionInicio(
+                icon: _finanzasActivas
+                    ? Icons.add_card_rounded
+                    : Icons.account_balance_wallet_outlined,
+                label: _finanzasActivas
+                    ? appText(
+                        context,
+                        'Registrar movimiento',
+                        'Add transaction',
+                      )
+                    : appText(context, 'Explorar Finanzas', 'Explore Finance'),
+                onPressed: widget.onVerFinanzas,
+              );
+              final botonTarea = _botonAccionInicio(
+                icon: Icons.add_task_rounded,
+                label: appText(context, 'Nueva tarea', 'New task'),
+                onPressed: widget.onVerTareas,
+              );
+              if (constraints.maxWidth < 380) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    botonFinanzas,
+                    const SizedBox(height: 10),
+                    botonTarea,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: botonFinanzas),
+                  const SizedBox(width: 12),
+                  Expanded(child: botonTarea),
+                ],
+              );
+            },
           ),
           const SizedBox(height: 16),
 
-          _tarjetaBalance(),
-          const SizedBox(height: 18),
-          _tarjetaProyeccion(),
-          const SizedBox(height: 18),
-          _resumenMetasCard(),
-          const SizedBox(height: 18),
-          _resumenSemanaCard(),
-          const SizedBox(height: 18),
-          if (_alertasPresupuesto.isNotEmpty ||
-              _porcentajePresupuestoUsado != null) ...[
-            _alertaPresupuesto(),
+          if (_finanzasActivas) ...[
+            _tarjetaBalance(),
+            const SizedBox(height: 18),
+            _tarjetaProyeccion(),
+            const SizedBox(height: 18),
+            _resumenMetasCard(),
+            const SizedBox(height: 18),
+            _resumenSemanaCard(),
+            const SizedBox(height: 18),
+            if (_alertasPresupuesto.isNotEmpty ||
+                _porcentajePresupuestoUsado != null) ...[
+              _alertaPresupuesto(),
+              const SizedBox(height: 18),
+            ],
+          ] else ...[
+            _tarjetaFinanzasInactivas(),
             const SizedBox(height: 18),
           ],
           Row(
@@ -332,19 +476,20 @@ class _HomeTabState extends State<HomeTab> {
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: _chipResumen(
-                  titulo: appText(context, 'Balance', 'Balance'),
-                  valor: formatearMonto(balanceMes),
-                  color: balanceMes >= 0 ? AppColors.green : AppColors.red,
-                  fondo: balanceMes >= 0
-                      ? AppColors.greenChipBg
-                      : AppColors.redChipBg,
-                  borde: balanceMes >= 0
-                      ? AppColors.greenChipBorder
-                      : AppColors.redChipBorder,
+              if (_finanzasActivas)
+                Expanded(
+                  child: _chipResumen(
+                    titulo: appText(context, 'Balance', 'Balance'),
+                    valor: formatearMonto(balanceMes),
+                    color: balanceMes >= 0 ? AppColors.green : AppColors.red,
+                    fondo: balanceMes >= 0
+                        ? AppColors.greenChipBg
+                        : AppColors.redChipBg,
+                    borde: balanceMes >= 0
+                        ? AppColors.greenChipBorder
+                        : AppColors.redChipBorder,
+                  ),
                 ),
-              ),
             ],
           ),
 
@@ -359,6 +504,158 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 20),
           _seccionRecomendaciones(consejos),
           const SizedBox(height: 12),
+        ],
+      ),
+    );
+  }
+
+  Widget _insigniaPlan() {
+    final plan = _plan;
+    final color = switch (plan) {
+      PlanTier.free => AppColors.green,
+      PlanTier.standard => AppColors.goldDeep,
+      PlanTier.premium => const Color(0xFF7C3AED),
+      null => AppColors.textSecondary,
+    };
+    final background = switch (plan) {
+      PlanTier.free => AppColors.greenChipBg,
+      PlanTier.standard => AppColors.goldChipBg,
+      PlanTier.premium => const Color(0xFFF3E8FF),
+      null => AppColors.surface,
+    };
+    final border = switch (plan) {
+      PlanTier.free => AppColors.greenChipBorder,
+      PlanTier.standard => AppColors.goldBorder,
+      PlanTier.premium => const Color(0xFFDDD6FE),
+      null => AppColors.borderSoft,
+    };
+    final planName = switch (plan) {
+      PlanTier.free => appText(context, 'Gratis', 'Free'),
+      PlanTier.standard => appText(context, 'Estándar', 'Standard'),
+      PlanTier.premium => 'Premium',
+      null =>
+        _cargandoPlan
+            ? appText(context, 'Consultando plan…', 'Checking plan…')
+            : appText(context, 'Plan no disponible', 'Plan unavailable'),
+    };
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: background,
+          borderRadius: BorderRadius.circular(AppRadii.xl2),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.workspace_premium_rounded, color: color, size: 18),
+            const SizedBox(width: 7),
+            Text(
+              '${appText(context, 'Plan', 'Plan')} $planName',
+              style: AppTypography.itemTitle.copyWith(color: color),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tarjetaFinanzasInactivas() {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(color: AppColors.borderSoft),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.account_balance_wallet_outlined,
+            color: AppColors.goldDeep,
+            size: 26,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  appText(
+                    context,
+                    'Finanzas cuando tú quieras',
+                    'Finance when you are ready',
+                  ),
+                  style: AppTypography.itemTitle,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  appText(
+                    context,
+                    'Activa el registro de movimientos desde Finanzas cuando quieras empezar.',
+                    'Enable transaction tracking in Finance whenever you are ready.',
+                  ),
+                  style: AppTypography.secondary,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tarjetaCompraPendiente(PlanSubscriptionDetails subscription) {
+    final isPreparing = subscription.isCheckoutPending;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.goldSoftBg,
+        borderRadius: BorderRadius.circular(AppRadii.xl2),
+        border: Border.all(color: AppColors.goldBorder),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.pending_actions_rounded, color: AppColors.goldDeep),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  appText(
+                    context,
+                    'Compra pendiente: ${subscription.plan.label}',
+                    'Pending purchase: ${subscription.plan.label}',
+                  ),
+                  style: AppTypography.itemTitle.copyWith(
+                    color: AppColors.goldDeep,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  isPreparing
+                      ? appText(
+                          context,
+                          'Puedes retomar el proceso desde aquí.',
+                          'You can resume checkout from here.',
+                        )
+                      : appText(
+                          context,
+                          'Completa el pago para activar tu plan.',
+                          'Complete checkout to activate your plan.',
+                        ),
+                  style: AppTypography.secondary,
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: widget.onVerPlanes,
+            child: Text(appText(context, 'Continuar', 'Continue')),
+          ),
         ],
       ),
     );
@@ -445,7 +742,11 @@ class _HomeTabState extends State<HomeTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            appText(context, 'BALANCE TOTAL DEL MES', 'TOTAL BALANCE THIS MONTH'),
+            appText(
+              context,
+              'BALANCE TOTAL DEL MES',
+              'TOTAL BALANCE THIS MONTH',
+            ),
             style: AppTypography.sectionLabel.copyWith(
               color: Colors.white70,
               fontSize: 12,
@@ -461,9 +762,18 @@ class _HomeTabState extends State<HomeTab> {
           const SizedBox(height: 14),
           Row(
             children: [
-              _datoBalance(appText(context, 'Ingresos', 'Income'), '+${formatearMonto(_ingresosMes)}'),
-              _datoBalance(appText(context, 'Gastos', 'Expenses'), '-${formatearMonto(_gastosMes)}'),
-              _datoBalance(appText(context, 'Mov.', 'Items'), '$_totalMovimientos'),
+              _datoBalance(
+                appText(context, 'Ingresos', 'Income'),
+                '+${formatearMonto(_ingresosMes)}',
+              ),
+              _datoBalance(
+                appText(context, 'Gastos', 'Expenses'),
+                '-${formatearMonto(_gastosMes)}',
+              ),
+              _datoBalance(
+                appText(context, 'Mov.', 'Items'),
+                '$_totalMovimientos',
+              ),
             ],
           ),
         ],
@@ -490,14 +800,30 @@ class _HomeTabState extends State<HomeTab> {
               children: [
                 Text(
                   _totalMovimientos == 0
-                      ? appText(context, 'Proyección mensual', 'Monthly forecast')
-                      : appText(context, 'Proyección al cierre del mes', 'Forecast at month end'),
+                      ? appText(
+                          context,
+                          'Proyección mensual',
+                          'Monthly forecast',
+                        )
+                      : appText(
+                          context,
+                          'Proyección al cierre del mes',
+                          'Forecast at month end',
+                        ),
                   style: AppTypography.itemTitle,
                 ),
                 Text(
                   _totalMovimientos == 0
-                      ? appText(context, 'Registra actividad para estimarla', 'Add transactions to see an estimate')
-                      : appText(context, 'Si mantienes el ritmo de gasto actual', 'If you keep spending at this pace'),
+                      ? appText(
+                          context,
+                          'Registra actividad para estimarla',
+                          'Add transactions to see an estimate',
+                        )
+                      : appText(
+                          context,
+                          'Si mantienes el ritmo de gasto actual',
+                          'If you keep spending at this pace',
+                        ),
                   style: AppTypography.secondary.copyWith(fontSize: 11),
                 ),
               ],
@@ -562,7 +888,10 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(appText(context, 'AVANCE DE METAS', 'GOAL PROGRESS'), style: AppTypography.sectionLabel),
+          Text(
+            appText(context, 'AVANCE DE METAS', 'GOAL PROGRESS'),
+            style: AppTypography.sectionLabel,
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -589,7 +918,11 @@ class _HomeTabState extends State<HomeTab> {
           ),
           const SizedBox(height: 10),
           Text(
-            appText(context, 'Más cerca: $metaMasCercana', 'Closest goal: $metaMasCercana'),
+            appText(
+              context,
+              'Más cerca: $metaMasCercana',
+              'Closest goal: $metaMasCercana',
+            ),
             style: AppTypography.secondary.copyWith(fontSize: 12),
           ),
         ],
@@ -616,7 +949,10 @@ class _HomeTabState extends State<HomeTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(appText(context, 'RESUMEN DE LA SEMANA', 'WEEKLY SUMMARY'), style: AppTypography.sectionLabel),
+          Text(
+            appText(context, 'RESUMEN DE LA SEMANA', 'WEEKLY SUMMARY'),
+            style: AppTypography.sectionLabel,
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -626,8 +962,16 @@ class _HomeTabState extends State<HomeTab> {
                   valor:
                       '${_resumenSemana.tareasCompletadas}/${_resumenSemana.tareasTotales}',
                   subtitulo: _resumenSemana.tareasTotales > 0
-                      ? appText(context, '${porcentaje.toStringAsFixed(0)}% hechas', '${porcentaje.toStringAsFixed(0)}% done')
-                      : appText(context, 'Sin tareas programadas', 'No scheduled tasks'),
+                      ? appText(
+                          context,
+                          '${porcentaje.toStringAsFixed(0)}% hechas',
+                          '${porcentaje.toStringAsFixed(0)}% done',
+                        )
+                      : appText(
+                          context,
+                          'Sin tareas programadas',
+                          'No scheduled tasks',
+                        ),
                   color: AppColors.goldDeep,
                 ),
               ),
@@ -709,10 +1053,22 @@ class _HomeTabState extends State<HomeTab> {
         ? AppColors.amber
         : AppColors.green;
     final texto = porcentaje >= 90
-        ? appText(context, 'Estás muy cerca del límite de tus presupuestos.', 'You are close to your budget limits.')
+        ? appText(
+            context,
+            'Estás muy cerca del límite de tus presupuestos.',
+            'You are close to your budget limits.',
+          )
         : porcentaje >= 75
-        ? appText(context, 'Tu gasto acumulado ya está alto para esta semana.', 'Your spending is already high this week.')
-        : appText(context, 'Tu presupuesto va por buen camino esta semana.', 'Your budget is on track this week.');
+        ? appText(
+            context,
+            'Tu gasto acumulado ya está alto para esta semana.',
+            'Your spending is already high this week.',
+          )
+        : appText(
+            context,
+            'Tu presupuesto va por buen camino esta semana.',
+            'Your budget is on track this week.',
+          );
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -734,8 +1090,16 @@ class _HomeTabState extends State<HomeTab> {
               children: [
                 Text(
                   _alertasPresupuesto.isNotEmpty
-                      ? appText(context, 'Límites por categoría cerca del tope', 'Category budgets nearing their limits')
-                      : appText(context, 'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado', 'Active budget: ${porcentaje.toStringAsFixed(0)}% used'),
+                      ? appText(
+                          context,
+                          'Límites por categoría cerca del tope',
+                          'Category budgets nearing their limits',
+                        )
+                      : appText(
+                          context,
+                          'Presupuesto activo: ${porcentaje.toStringAsFixed(0)}% usado',
+                          'Active budget: ${porcentaje.toStringAsFixed(0)}% used',
+                        ),
                   style: AppTypography.itemTitle.copyWith(color: color),
                 ),
                 const SizedBox(height: 4),

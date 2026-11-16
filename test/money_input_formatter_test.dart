@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myd/core/formatters/money_input_formatter.dart';
-import 'package:myd/core/settings/app_settings.dart';
+import 'package:manage_your_day/core/formatters/money_input_formatter.dart';
+import 'package:manage_your_day/core/settings/app_settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

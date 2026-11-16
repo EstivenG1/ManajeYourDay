@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/formatters/money_input_formatter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
@@ -72,27 +73,40 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
       ),
       builder: (context) => Padding(
         padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
+          left: 20,
+          right: 20,
+          top: 20,
           bottom: MediaQuery.of(context).viewInsets.bottom + 20,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text('Agregar aporte', style: AppTypography.screenTitle.copyWith(fontSize: 18)),
+            Text(
+              'Agregar aporte',
+              style: AppTypography.screenTitle.copyWith(fontSize: 18),
+            ),
             const SizedBox(height: 16),
             Text('MONTO', style: AppTypography.sectionLabel),
             const SizedBox(height: 8),
             MoneyTextFormField(
               controller: montoCtrl,
               autofocus: true,
-              style: AppTypography.balanceDisplay.copyWith(fontSize: 26, color: AppColors.gold),
+              style: AppTypography.balanceDisplay.copyWith(
+                fontSize: 26,
+                color: AppColors.gold,
+              ),
               decoration: const InputDecoration(hintText: '0'),
             ),
             const SizedBox(height: 14),
             Text('NOTA (opcional)', style: AppTypography.sectionLabel),
             const SizedBox(height: 8),
-            TextField(controller: notaCtrl, decoration: const InputDecoration(hintText: 'Ej: Bono de diciembre')),
+            TextField(
+              controller: notaCtrl,
+              decoration: const InputDecoration(
+                hintText: 'Ej: Bono de diciembre',
+              ),
+            ),
             const SizedBox(height: 22),
             SizedBox(
               height: 52,
@@ -111,8 +125,14 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                       Navigator.pop(context, true);
                     },
                     child: const Center(
-                      child: Text('Guardar aporte',
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
+                      child: Text(
+                        'Guardar aporte',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -128,7 +148,9 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
       final monto = parseMontoEntrada(montoCtrl.text);
       if (monto == null || monto <= 0) return;
       try {
-        final userId = supabase.auth.currentUser!.id;
+        final user = supabase.auth.currentUser;
+        if (user == null) return;
+        final userId = user.id;
         await supabase.from('aportes_ahorro').insert({
           'meta_id': _meta['id'],
           'usuario_id': userId,
@@ -150,7 +172,8 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('No se pudo agregar: $e')));
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('No se pudo agregar: $e')));
         }
       }
     }
@@ -161,9 +184,14 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('¿Eliminar aporte?'),
-        content: Text('Se eliminará el aporte de ${formatearMonto(aporte['monto'])}.'),
+        content: Text(
+          'Se eliminará el aporte de ${formatearMonto(aporte['monto'])}.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
@@ -190,9 +218,14 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('¿Eliminar meta?'),
-        content: Text('"${_meta['nombre']}" y todo su historial de aportes se eliminarán.'),
+        content: Text(
+          '"${_meta['nombre']}" y todo su historial de aportes se eliminarán.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
             child: Text('Eliminar', style: TextStyle(color: AppColors.red)),
@@ -223,7 +256,10 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
             onSelected: (v) => v == 'editar' ? _editarMeta() : _eliminarMeta(),
             itemBuilder: (context) => [
               const PopupMenuItem(value: 'editar', child: Text('Editar meta')),
-              const PopupMenuItem(value: 'eliminar', child: Text('Eliminar meta')),
+              const PopupMenuItem(
+                value: 'eliminar',
+                child: Text('Eliminar meta'),
+              ),
             ],
           ),
         ],
@@ -231,22 +267,22 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
       body: _cargando
           ? Center(child: CircularProgressIndicator(color: AppColors.gold))
           : _errorCarga != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(_errorCarga!, textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        OutlinedButton(
-                          onPressed: _cargar,
-                          child: const Text('Reintentar'),
-                        ),
-                      ],
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_errorCarga!, textAlign: TextAlign.center),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: _cargar,
+                      child: const Text('Reintentar'),
                     ),
-                  ),
-                )
+                  ],
+                ),
+              ),
+            )
           : RefreshIndicator(
               color: AppColors.gold,
               onRefresh: _cargar,
@@ -256,40 +292,74 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                   Container(
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [AppColors.gold, AppColors.goldDark]),
+                      gradient: LinearGradient(
+                        colors: [AppColors.gold, AppColors.goldDark],
+                      ),
                       borderRadius: BorderRadius.circular(AppRadii.xl3),
-                      boxShadow: AppColors.sombraPremium(AppColors.gold, blur: 24, dy: 10),
+                      boxShadow: AppColors.sombraPremium(
+                        AppColors.gold,
+                        blur: 24,
+                        dy: 10,
+                      ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
                           children: [
-                            Text(_meta['icono'] ?? '🎯', style: const TextStyle(fontSize: 24)),
+                            Text(
+                              _meta['icono'] ?? '🎯',
+                              style: const TextStyle(fontSize: 24),
+                            ),
                             const SizedBox(width: 8),
                             if (completada)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.25),
-                                  borderRadius: BorderRadius.circular(AppRadii.full),
+                                  borderRadius: BorderRadius.circular(
+                                    AppRadii.full,
+                                  ),
                                 ),
-                                child: const Text('✅ Completada',
-                                    style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
+                                child: const Text(
+                                  '✅ Completada',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                           ],
                         ),
                         const SizedBox(height: 14),
-                        Text(formatearMonto(actual),
-                            style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w800)),
-                        Text('de ${formatearMonto(objetivo)}', style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                        Text(
+                          formatearMonto(actual),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        Text(
+                          'de ${formatearMonto(objetivo)}',
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         ClipRRect(
                           borderRadius: BorderRadius.circular(AppRadii.full),
                           child: LinearProgressIndicator(
                             value: pct.toDouble(),
                             minHeight: 10,
-                            backgroundColor: Colors.white.withValues(alpha: 0.3),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.3,
+                            ),
                             color: Colors.white,
                           ),
                         ),
@@ -297,23 +367,39 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('${(pct * 100).toStringAsFixed(0)}% completado',
-                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+                            Text(
+                              '${(pct * 100).toStringAsFixed(0)}% completado',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                             if (!completada)
-                              Text('Faltan ${formatearMonto(restante)}',
-                                  style: const TextStyle(color: Colors.white70, fontSize: 12.5)),
+                              Text(
+                                'Faltan ${formatearMonto(restante)}',
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 12.5,
+                                ),
+                              ),
                           ],
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 24),
-                  Text('HISTORIAL DE APORTES', style: AppTypography.sectionLabel),
+                  Text(
+                    'HISTORIAL DE APORTES',
+                    style: AppTypography.sectionLabel,
+                  ),
                   const SizedBox(height: 12),
                   if (_aportes.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 20),
-                      child: Text('Aún no has agregado ningún aporte.', style: AppTypography.secondary),
+                      child: Text(
+                        'Aún no has agregado ningún aporte.',
+                        style: AppTypography.secondary,
+                      ),
                     )
                   else
                     ..._aportes.map((a) {
@@ -324,28 +410,45 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                         decoration: BoxDecoration(
                           color: AppColors.surface,
                           borderRadius: BorderRadius.circular(AppRadii.xl2),
-                          border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+                          border: Border.all(
+                            color: AppColors.borderSoft,
+                            width: AppRadii.borderWidth,
+                          ),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.savings_outlined, color: AppColors.gold, size: 20),
+                            Icon(
+                              Icons.savings_outlined,
+                              color: AppColors.gold,
+                              size: 20,
+                            ),
                             const SizedBox(width: 10),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(formatearMonto(a['monto']),
-                                      style: AppTypography.itemTitle.copyWith(color: AppColors.green)),
+                                  Text(
+                                    formatearMonto(a['monto']),
+                                    style: AppTypography.itemTitle.copyWith(
+                                      color: AppColors.green,
+                                    ),
+                                  ),
                                   Text(
                                     '${fecha.day.toString().padLeft(2, '0')}/${fecha.month.toString().padLeft(2, '0')}/${fecha.year}'
                                     '${a['nota'] != null ? ' · ${a['nota']}' : ''}',
-                                    style: AppTypography.secondary.copyWith(fontSize: 11.5),
+                                    style: AppTypography.secondary.copyWith(
+                                      fontSize: 11.5,
+                                    ),
                                   ),
                                 ],
                               ),
                             ),
                             IconButton(
-                              icon: Icon(Icons.delete_outline, color: AppColors.textTertiary, size: 18),
+                              icon: Icon(
+                                Icons.delete_outline,
+                                color: AppColors.textTertiary,
+                                size: 18,
+                              ),
                               onPressed: () => _eliminarAporte(a),
                             ),
                           ],
@@ -359,6 +462,7 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
       floatingActionButton: completada
           ? null
           : FloatingActionButton.extended(
+              heroTag: 'goal-contribution',
               backgroundColor: AppColors.gold,
               foregroundColor: Colors.white,
               onPressed: _agregarAporte,

@@ -9,9 +9,10 @@ class AppSettings extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.light;
   double _textScale = 1;
   bool _highContrast = false;
-  bool _notificationsEnabled = true;
+  bool _notificationsEnabled = false;
   String _currency = 'COP';
   String _language = 'es';
+  String _appliedLanguage = 'es';
 
   ThemeMode get themeMode => _themeMode;
   bool get isDark => _themeMode == ThemeMode.dark;
@@ -20,7 +21,7 @@ class AppSettings extends ChangeNotifier {
   bool get notificationsEnabled => _notificationsEnabled;
   String get currency => _currency;
   String get language => _language;
-  Locale get locale => Locale(_language);
+  Locale get locale => Locale(_appliedLanguage);
 
   static Future<void> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -31,9 +32,10 @@ class AppSettings extends ChangeNotifier {
     instance._textScale = prefs.getDouble('text_scale') ?? 1;
     instance._highContrast = prefs.getBool('high_contrast') ?? false;
     instance._notificationsEnabled =
-        prefs.getBool('notifications_enabled') ?? true;
+        prefs.getBool('notifications_enabled') ?? false;
     instance._currency = prefs.getString('currency') ?? 'COP';
     instance._language = prefs.getString('language') ?? 'es';
+    instance._appliedLanguage = instance._language;
   }
 
   Future<void> setThemeMode(ThemeMode value) async {

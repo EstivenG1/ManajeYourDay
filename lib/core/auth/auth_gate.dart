@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../supabase/supabase_config.dart';
 import '../services/notification_service.dart';
+import '../services/profile_bootstrap_service.dart';
 import '../../features/auth/password_recovery_screen.dart';
 import '../../features/splash/welcome_screen.dart';
 import '../../features/splash/new_user_welcome_screen.dart';
@@ -25,6 +26,9 @@ class _AuthGateState extends State<AuthGate> {
   late Session? _session;
   bool _passwordRecoveryPending = false;
   bool _showNewUserWelcome = false;
+  bool _profileReady = false;
+  String? _profileError;
+  String? _profileLoadingUserId;
   bool _recoveryRouteOpen = false;
   StreamSubscription<AuthState>? _authSubscription;
 
@@ -32,17 +36,38 @@ class _AuthGateState extends State<AuthGate> {
   void initState() {
     super.initState();
     _session = supabase.auth.currentSession;
+    _profileReady = _session == null;
     _showNewUserWelcome =
         _session?.user.userMetadata?['myd_welcome_pending'] == true;
     _passwordRecoveryPending =
         _session != null && SupabaseConfig.consumePasswordRecoveryRedirect();
+    final sessionAtStartup = _session;
+    if (sessionAtStartup != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _session?.user.id == sessionAtStartup.user.id) {
+          _prepararPerfil(sessionAtStartup);
+        }
+      });
+    }
     _authSubscription = supabase.auth.onAuthStateChange.listen((authState) {
       if (!mounted) return;
+      final previousUserId = _session?.user.id;
+      final session = authState.session;
+      final needsProfile =
+          session != null &&
+          (session.user.id != previousUserId ||
+              authState.event == AuthChangeEvent.signedIn);
       setState(() {
-        _session = authState.session;
+        _session = session;
+        if (session == null) {
+          _profileReady = true;
+          _profileError = null;
+        } else if (needsProfile) {
+          _profileReady = false;
+          _profileError = null;
+        }
         _showNewUserWelcome =
-            authState.session?.user.userMetadata?['myd_welcome_pending'] ==
-            true;
+            session?.user.userMetadata?['myd_welcome_pending'] == true;
         if (authState.event == AuthChangeEvent.passwordRecovery) {
           _passwordRecoveryPending = true;
           SupabaseConfig.consumePasswordRecoveryRedirect();
@@ -55,6 +80,7 @@ class _AuthGateState extends State<AuthGate> {
           _passwordRecoveryPending = true;
         }
       });
+      if (needsProfile) unawaited(_prepararPerfil(session));
       if (authState.event == AuthChangeEvent.passwordRecovery) {
         _openRecoveryRoute();
       }
@@ -67,6 +93,32 @@ class _AuthGateState extends State<AuthGate> {
         );
       }
     });
+  }
+
+  Future<void> _prepararPerfil(Session session) async {
+    final userId = session.user.id;
+    if (_profileLoadingUserId == userId) return;
+    _profileLoadingUserId = userId;
+    try {
+      await ProfileBootstrapService.ensureExists(session.user);
+      if (!mounted || _session?.user.id != userId) return;
+      setState(() {
+        _profileReady = true;
+        _profileError = null;
+      });
+    } catch (error) {
+      if (!mounted || _session?.user.id != userId) return;
+      setState(() => _profileError = 'No se pudo preparar tu perfil: $error');
+    } finally {
+      if (_profileLoadingUserId == userId) _profileLoadingUserId = null;
+    }
+  }
+
+  Future<void> _reintentarPrepararPerfil() async {
+    final session = _session;
+    if (session == null) return;
+    setState(() => _profileError = null);
+    await _prepararPerfil(session);
   }
 
   Future<void> _sincronizarNotificacionesDeLaCuenta({
@@ -131,6 +183,31 @@ class _AuthGateState extends State<AuthGate> {
 
   @override
   Widget build(BuildContext context) {
+    if (_session != null && _profileError != null) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_profileError!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: _reintentarPrepararPerfil,
+                  child: const Text('Reintentar'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    if (_session != null && !_profileReady) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     if (_passwordRecoveryPending && _session != null) {
       return PasswordRecoveryScreen(onCompleted: _completePasswordRecovery);
     }

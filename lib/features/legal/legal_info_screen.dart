@@ -23,8 +23,8 @@ class LegalInfoScreen extends StatelessWidget {
     _LegalSection(
       titleEs: '2. Qué ofrece MYD',
       titleEn: '2. What MYD provides',
-      bodyEs: 'MYD ofrece herramientas gratuitas para organizar tareas y registrar movimientos, presupuestos y metas de ahorro, además de resúmenes, reportes y recordatorios. Las funciones disponibles pueden variar según la versión de la app. MYD no procesa pagos ni suscripciones.',
-      bodyEn: 'MYD provides free tools to organize tasks and record transactions, budgets, and savings goals, as well as summaries, reports, and reminders. Available features may vary by app version. MYD does not process payments or subscriptions.',
+      bodyEs: 'MYD ofrece herramientas gratuitas para organizar tareas y registrar movimientos, presupuestos y metas de ahorro, además de resúmenes, reportes y recordatorios. Las funciones disponibles pueden variar según la versión de la app. Los planes de pago se contratan mediante Mercado Pago en la versión web o en la APK distribuida directamente.',
+      bodyEn: 'MYD provides free tools to organize tasks and record transactions, budgets, and savings goals, as well as summaries, reports, and reminders. Available features may vary by app version. Paid plans are purchased through Mercado Pago on the web version or the directly distributed APK.',
     ),
     _LegalSection(
       titleEs: '3. Tu cuenta',
@@ -92,8 +92,8 @@ class LegalInfoScreen extends StatelessWidget {
     _LegalSection(
       titleEs: '3. Almacenamiento y proveedores',
       titleEn: '3. Storage and providers',
-      bodyEs: 'MYD utiliza Supabase para autenticacion, base de datos y almacenamiento de fotos de perfil, recibos privados y coordenadas de movimientos cuya ubicacion activaste. El mapa solicita mosaicos de OpenStreetMap y el servicio de geocodificacion del dispositivo puede procesar coordenadas para mostrar una direccion aproximada. Google se utiliza si eliges iniciar sesion con Google.',
-      bodyEn: 'MYD uses Supabase for authentication, database, and storage of profile photos, private receipts, and transaction coordinates when you enable location. The map requests OpenStreetMap tiles, and the device geocoding service may process coordinates to display an approximate address. Google is used if you choose Google sign-in.',
+      bodyEs: 'MYD utiliza Supabase para autenticacion, base de datos y almacenamiento de fotos de perfil, recibos privados y coordenadas de movimientos cuya ubicacion activaste. Si contratas un plan, Mercado Pago procesa el pago y recibe los datos necesarios para la suscripcion, como el correo de la cuenta; MYD guarda el estado y los datos de referencia de la suscripcion. El mapa solicita mosaicos de OpenStreetMap y el servicio de geocodificacion del dispositivo puede procesar coordenadas para mostrar una direccion aproximada. Google se utiliza si eliges iniciar sesion con Google.',
+      bodyEn: 'MYD uses Supabase for authentication, database, and storage of profile photos, private receipts, and transaction coordinates when you enable location. If you purchase a plan, Mercado Pago processes the payment and receives the information needed for the subscription, such as the account email; MYD stores the subscription status and reference details. The map requests OpenStreetMap tiles, and the device geocoding service may process coordinates to display an approximate address. Google is used if you choose Google sign-in.',
     ),
     _LegalSection(
       titleEs: '4. Preferencias y datos locales',

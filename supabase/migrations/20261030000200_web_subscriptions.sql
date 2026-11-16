@@ -38,6 +38,8 @@ revoke all on table public.billing_subscriptions from public, anon, authenticate
 grant select on table public.billing_subscriptions to authenticated;
 grant all on table public.billing_subscriptions to service_role;
 
+drop policy if exists "Users can read their own billing subscriptions"
+  on public.billing_subscriptions;
 create policy "Users can read their own billing subscriptions"
   on public.billing_subscriptions
   for select

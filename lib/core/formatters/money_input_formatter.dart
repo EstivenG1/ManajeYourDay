@@ -87,6 +87,7 @@ class MoneyTextFormField extends StatelessWidget {
   final FormFieldValidator<String>? validator;
   final TextStyle? style;
   final bool autofocus;
+  final FocusNode? focusNode;
 
   const MoneyTextFormField({
     super.key,
@@ -95,6 +96,7 @@ class MoneyTextFormField extends StatelessWidget {
     this.validator,
     this.style,
     this.autofocus = false,
+    this.focusNode,
   });
 
   @override
@@ -102,6 +104,7 @@ class MoneyTextFormField extends StatelessWidget {
     return TextFormField(
       controller: controller,
       autofocus: autofocus,
+      focusNode: focusNode,
       keyboardType: const TextInputType.numberWithOptions(decimal: true),
       inputFormatters: const [MoneyInputFormatter()],
       decoration: decoration.copyWith(
