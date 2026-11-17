@@ -43,6 +43,21 @@ class _AuthGateState extends State<AuthGate> {
         _session?.user.userMetadata?['myd_welcome_pending'] == true;
     _passwordRecoveryPending =
         _session != null && SupabaseConfig.consumePasswordRecoveryRedirect();
+    final authRedirectError = SupabaseConfig.consumeAuthRedirectError();
+    if (authRedirectError != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            duration: const Duration(seconds: 10),
+            content: Text(
+              'No se pudo confirmar el correo ($authRedirectError). '
+              'Solicita un enlace nuevo e inténtalo otra vez.',
+            ),
+          ),
+        );
+      });
+    }
     final sessionAtStartup = _session;
     if (sessionAtStartup != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -58,7 +73,8 @@ class _AuthGateState extends State<AuthGate> {
       final needsProfile =
           session != null &&
           (session.user.id != previousUserId ||
-              authState.event == AuthChangeEvent.signedIn);
+              authState.event == AuthChangeEvent.signedIn ||
+              authState.event == AuthChangeEvent.userUpdated);
       setState(() {
         _session = session;
         if (session == null) {
@@ -109,7 +125,7 @@ class _AuthGateState extends State<AuthGate> {
         await _descartarSesionInvalida();
         return;
       }
-      await ProfileBootstrapService.ensureExists(session.user);
+      await ProfileBootstrapService.ensureExists(verifiedUser);
       final factors = await supabase.auth.mfa.listFactors();
       final verifiedFactor = factors.totp
           .where((factor) => factor.status == FactorStatus.verified)

@@ -54,16 +54,34 @@ class SupabaseConfig {
       emailConfirmationRedirectFor(isWeb: kIsWeb, currentUri: Uri.base);
 
   static bool _passwordRecoveryRedirectReceived = false;
+  static String? _authRedirectError;
 
   static bool isPasswordRecoveryRedirect(Uri uri) =>
       uri.scheme == 'io.supabase.myd' && uri.host == 'reset-password';
 
   static bool detectAuthRedirect(Uri uri) {
+    final fragmentParameters = Uri.splitQueryString(uri.fragment);
+    final authRedirectError =
+        uri.queryParameters['error_description'] ??
+        uri.queryParameters['error_code'] ??
+        uri.queryParameters['error'] ??
+        fragmentParameters['error_description'] ??
+        fragmentParameters['error_code'] ??
+        fragmentParameters['error'];
+    if (authRedirectError != null) {
+      _authRedirectError = authRedirectError;
+    }
     final isPasswordRecovery = isPasswordRecoveryRedirect(uri);
     if (isPasswordRecovery) {
       _passwordRecoveryRedirectReceived = true;
     }
     return _hasAuthParameters(uri) || isPasswordRecovery;
+  }
+
+  static String? consumeAuthRedirectError() {
+    final error = _authRedirectError;
+    _authRedirectError = null;
+    return error;
   }
 
   static bool consumePasswordRecoveryRedirect() {

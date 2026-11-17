@@ -87,6 +87,21 @@ void main() {
     expect(SupabaseConfig.consumePasswordRecoveryRedirect(), isFalse);
   });
 
+  test('authentication callback errors can be surfaced to the user', () {
+    final callbackUri = Uri.parse(
+      'https://estiveng1.github.io/ManajeYourDay/'
+      '?error=access_denied&error_code=otp_expired'
+      '&error_description=Email+link+is+invalid+or+has+expired',
+    );
+
+    expect(SupabaseConfig.detectAuthRedirect(callbackUri), isTrue);
+    expect(
+      SupabaseConfig.consumeAuthRedirectError(),
+      'Email link is invalid or has expired',
+    );
+    expect(SupabaseConfig.consumeAuthRedirectError(), isNull);
+  });
+
   testWidgets('password recovery validates and updates the new password', (
     tester,
   ) async {
