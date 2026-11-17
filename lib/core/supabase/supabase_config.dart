@@ -13,10 +13,12 @@ class SupabaseConfig {
   static const String mercadoPagoPublicKey =
       'APP_USR-472b9ada-02ad-4c71-b45d-8d3595d7e780';
 
-  static const String passwordRecoveryRedirect = 'https://manageyourday.app/';
+  static const String passwordRecoveryRedirect =
+      'https://estiveng1.github.io/ManajeYourDay/';
 
   static const String authCallbackRedirect = 'io.supabase.myd://auth-callback';
-  static const String emailConfirmationRedirect = 'https://manageyourday.app/';
+  static const String emailConfirmationRedirect =
+      'https://estiveng1.github.io/ManajeYourDay/';
 
   static String passwordRecoveryRedirectFor({
     required bool isWeb,

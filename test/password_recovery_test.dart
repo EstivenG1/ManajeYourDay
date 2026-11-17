@@ -24,7 +24,7 @@ void main() {
     );
 
     expect(redirect, SupabaseConfig.passwordRecoveryRedirect);
-    expect(redirect, startsWith('https://'));
+    expect(redirect, 'https://estiveng1.github.io/ManajeYourDay/');
   });
 
   test('web signup confirmation returns to the current web app URL', () {
@@ -54,7 +54,7 @@ void main() {
     );
 
     expect(redirect, SupabaseConfig.emailConfirmationRedirect);
-    expect(redirect, startsWith('https://'));
+    expect(redirect, 'https://estiveng1.github.io/ManajeYourDay/');
   });
 
   test('web email confirmation returns to the current web app URL', () {

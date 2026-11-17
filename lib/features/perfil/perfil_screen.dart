@@ -13,6 +13,7 @@ import '../../core/settings/app_settings.dart';
 import '../../core/services/notification_service.dart';
 import '../../core/services/plan_service.dart';
 import '../../core/services/profile_avatar_service.dart';
+import '../../core/services/profile_bootstrap_service.dart';
 import '../legal/centro_ayuda_screen.dart';
 import 'perfil_action_dialogs.dart';
 
@@ -103,6 +104,24 @@ class _PerfilScreenState extends State<PerfilScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && !_actualizandoPlan) {
       _cargarPlan();
+      if (!widget.soloPlanes) _sincronizarCorreoDeAuth();
+    }
+  }
+
+  Future<void> _sincronizarCorreoDeAuth() async {
+    try {
+      final user = (await supabase.auth.getUser()).user;
+      final email = user?.email;
+      if (user == null || email == null || email == _correo) return;
+      await ProfileBootstrapService.ensureExists(user);
+      if (!mounted || user.id != supabase.auth.currentUser?.id) return;
+      setState(() => _correo = email);
+    } catch (error) {
+      debugPrint('Unable to refresh account email: $error');
+      if (!mounted) return;
+      _mostrarErrorPerfil(
+        'No se pudo actualizar el correo del perfil. Inténtalo de nuevo.',
+      );
     }
   }
 

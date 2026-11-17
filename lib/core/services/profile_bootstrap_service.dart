@@ -9,10 +9,19 @@ class ProfileBootstrapService {
         .select('id')
         .eq('id', user.id)
         .maybeSingle();
-    if (existing != null) return;
+    final email = user.email;
+    if (existing != null) {
+      if (email != null && email.isNotEmpty) {
+        await supabase
+            .from('perfiles')
+            .update({'correo': email})
+            .eq('id', user.id)
+            .neq('correo', email);
+      }
+      return;
+    }
 
     final metadata = user.userMetadata ?? const <String, dynamic>{};
-    final email = user.email;
     if (email == null || email.isEmpty) {
       throw StateError('The signed-in user has no email for profile creation.');
     }
