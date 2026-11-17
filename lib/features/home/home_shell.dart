@@ -4,6 +4,7 @@ import '../../core/localization/app_text.dart';
 import '../../core/services/guided_tour.dart';
 import '../../core/services/home_utils.dart';
 import '../../core/services/profile_avatar_service.dart';
+import '../../core/services/profile_bootstrap_service.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/supabase/supabase_config.dart';
 import 'home_tab.dart';
@@ -22,7 +23,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tabActual = 0;
   int _planRefreshToken = 0;
   int _reportesHoyToken = 0;
@@ -49,11 +50,19 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pageController = PageController();
     _cargarPerfil();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _iniciarTour();
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _cargarPerfil(refreshHomeTab: false);
+    }
   }
 
   Future<void> _repetirTour() async {
@@ -171,10 +180,11 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  Future<void> _cargarPerfil() async {
+  Future<void> _cargarPerfil({bool refreshHomeTab = true}) async {
     try {
-      final user = supabase.auth.currentUser;
+      final user = (await supabase.auth.getUser()).user;
       if (user == null) return;
+      await ProfileBootstrapService.ensureExists(user);
       final userId = user.id;
       final data = Map<String, dynamic>.from(
         await supabase
@@ -183,13 +193,14 @@ class _HomeShellState extends State<HomeShell> {
             .eq('id', userId)
             .single(),
       );
+      data['correo'] = user.email ?? data['correo'];
       data['avatar_url'] = await ProfileAvatarService.resolve(
         data['avatar_url'] as String?,
       );
       if (mounted) {
         setState(() {
           _perfil = data;
-          _tabWidgets[0] = null;
+          if (refreshHomeTab) _tabWidgets[0] = null;
         });
       }
     } catch (error) {
@@ -252,7 +263,9 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  void _mostrarMenuPerfil() {
+  Future<void> _mostrarMenuPerfil() async {
+    await _cargarPerfil(refreshHomeTab: false);
+    if (!mounted) return;
     final nombre = _perfil?['nombre'] ?? '';
     final correo = _perfil?['correo'] ?? supabase.auth.currentUser?.email ?? '';
 
@@ -534,6 +547,7 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pageController.dispose();
     super.dispose();
   }

@@ -80,7 +80,14 @@ void main() {
     expect(find.text('Confirma el cambio de correo'), findsOneWidget);
     expect(find.text('nuevo@example.com'), findsOneWidget);
     expect(find.textContaining('correo actual y del nuevo'), findsOneWidget);
-    expect(find.textContaining('ambos mensajes'), findsOneWidget);
+    expect(
+      find.textContaining('Al regresar a MYD, ese correo ya quedó confirmado'),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('cuando confirmes los dos enlaces'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('invite dialog calls share action', (WidgetTester tester) async {

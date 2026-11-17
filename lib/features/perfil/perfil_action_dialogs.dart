@@ -115,25 +115,25 @@ class EmailChangeConfirmationDialog extends StatelessWidget {
       ),
       description: appText(
         context,
-        'Te enviamos mensajes de confirmación al correo actual y al nuevo. Puedes abrir los enlaces desde cualquier dispositivo con navegador.',
-        'We sent confirmation messages to your current and new email addresses. You can open the links on any device with a browser.',
+        'Te enviamos un mensaje al correo actual y otro al nuevo. Abre cada mensaje desde su bandeja de entrada y confirma el cambio; cada enlace te llevará a la app web de MYD. Al regresar a MYD, ese correo ya quedó confirmado, pero el cambio solo se completa cuando confirmes los dos enlaces.',
+        'We sent one message to your current email and another to the new one. Open each message from its inbox and confirm the change; each link takes you to the MYD web app. Returning to MYD means that email is confirmed, but the change is complete only after you confirm both links.',
       ),
       highlightedText: email,
       steps: [
         appText(
           context,
-          'Revisa las bandejas de entrada del correo actual y del nuevo.',
-          'Check the inboxes for both your current and new email addresses.',
+          'Revisa las bandejas de entrada del correo actual y del nuevo (también Spam o Promociones).',
+          'Check the inboxes for both your current and new email addresses (including Spam or Promotions).',
         ),
         appText(
           context,
-          'Abre el enlace de confirmación de ambos mensajes. No necesitas tener MYD instalada en ese dispositivo.',
-          'Open the confirmation link in both messages. MYD does not need to be installed on that device.',
+          'Abre el enlace de cada mensaje. Cada uno te llevará a la app web de MYD; al llegar, ese correo quedó confirmado. No necesitas tener MYD instalada en ese dispositivo.',
+          'Open the link in each message. Each one takes you to the MYD web app; once there, that email is confirmed. MYD does not need to be installed on that device.',
         ),
         appText(
           context,
-          'Cuando ambos correos estén confirmados, inicia sesión con la dirección nueva.',
-          'After both emails are confirmed, sign in with your new address.',
+          'Debes confirmar los dos mensajes: uno enviado al correo actual y otro al nuevo. El cambio se completa cuando abras ambos enlaces y regreses a MYD desde cada uno; después, inicia sesión con la dirección nueva.',
+          'You must confirm both messages: one sent to the current email and one to the new one. The change is complete after you open both links and return to MYD from each one; then sign in with the new address.',
         ),
       ],
     );

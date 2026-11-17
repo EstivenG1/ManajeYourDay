@@ -721,12 +721,13 @@ class _PerfilScreenState extends State<PerfilScreen>
 
   Future<void> _cargarPerfil() async {
     try {
-      final user = supabase.auth.currentUser;
+      final user = (await supabase.auth.getUser()).user;
 
       if (user == null) {
         throw Exception('No hay una sesión activa.');
       }
 
+      await ProfileBootstrapService.ensureExists(user);
       final userId = user.id;
 
       final data = await supabase
@@ -774,7 +775,7 @@ class _PerfilScreenState extends State<PerfilScreen>
       } else {
         _portadaUrl = null;
       }
-      _correo = data?['correo'] as String? ?? user.email;
+      _correo = user.email ?? (data?['correo'] as String?);
 
       _escalaTexto = AppSettings.instance.textScale;
       await AppSettings.instance.setRegionalPreferences(
