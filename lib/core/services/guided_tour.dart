@@ -118,9 +118,10 @@ class _GuidedTourState extends State<_GuidedTour> {
     final renderObject = targetContext.findRenderObject();
     if (renderObject is RenderBox && renderObject.hasSize) {
       final rect = renderObject.localToGlobal(Offset.zero) & renderObject.size;
-      final media = MediaQuery.of(context);
-      if (rect.top >= media.padding.top + 12 &&
-          rect.bottom <= media.size.height - media.padding.bottom - 12) {
+      final mediaSize = MediaQuery.sizeOf(context);
+      final mediaPadding = MediaQuery.paddingOf(context);
+      if (rect.top >= mediaPadding.top + 12 &&
+          rect.bottom <= mediaSize.height - mediaPadding.bottom - 12) {
         return;
       }
     }

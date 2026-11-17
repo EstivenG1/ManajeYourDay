@@ -13,10 +13,10 @@ class SupabaseConfig {
   static const String mercadoPagoPublicKey =
       'APP_USR-472b9ada-02ad-4c71-b45d-8d3595d7e780';
 
-  static const String passwordRecoveryRedirect =
-      'io.supabase.myd://reset-password';
+  static const String passwordRecoveryRedirect = 'https://manageyourday.app/';
 
   static const String authCallbackRedirect = 'io.supabase.myd://auth-callback';
+  static const String emailConfirmationRedirect = 'https://manageyourday.app/';
 
   static String passwordRecoveryRedirectFor({
     required bool isWeb,
@@ -39,6 +39,17 @@ class SupabaseConfig {
 
   static String get currentAuthCallbackRedirect =>
       authCallbackRedirectFor(isWeb: kIsWeb, currentUri: Uri.base);
+
+  static String emailConfirmationRedirectFor({
+    required bool isWeb,
+    required Uri currentUri,
+  }) {
+    if (!isWeb) return emailConfirmationRedirect;
+    return '${currentUri.origin}${currentUri.path}';
+  }
+
+  static String get currentEmailConfirmationRedirect =>
+      emailConfirmationRedirectFor(isWeb: kIsWeb, currentUri: Uri.base);
 
   static bool _passwordRecoveryRedirectReceived = false;
 

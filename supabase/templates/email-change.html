@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Confirma el cambio de correo | MYD</title>
+  </head>
+  <body style="margin:0; padding:32px 16px; background:#FAF8F2; color:#1C1917; font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellspacing="0" cellpadding="0" border="0" style="width:100%; max-width:560px; background:#FFFFFF; border:1px solid #EDE8DE; border-radius:16px; overflow:hidden;">
+            <tr>
+              <td style="padding:28px 32px 22px; border-bottom:3px solid #C9A84C;">
+                <strong style="color:#8B6914; font-size:18px;">MYD</strong>
+                <span style="padding-left:10px; color:#1C1917; font-size:16px; font-weight:bold;">Manage Your Day</span>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 32px 28px;">
+                <p style="margin:0 0 10px; color:#8B6914; font-size:12px; font-weight:bold; letter-spacing:1.4px; text-transform:uppercase;">Seguridad de tu cuenta</p>
+                <h1 style="margin:0 0 18px; font-size:28px; line-height:1.25;">Confirma el cambio de correo</h1>
+                <p style="margin:0 0 14px; color:#57534E; font-size:16px; line-height:1.65;">
+                  Recibimos una solicitud para cambiar la dirección de correo de tu cuenta MYD. Usa este enlace para confirmar el cambio desde cualquier dispositivo con navegador.
+                </p>
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:24px 0;">
+                  <tr>
+                    <td bgcolor="#8B6914" style="border-radius:8px;">
+                      <a href="{{ .ConfirmationURL }}" target="_blank" style="display:inline-block; padding:15px 24px; color:#FFFFFF; font-size:15px; font-weight:bold; text-decoration:none;">Confirmar cambio de correo</a>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 8px; color:#78716C; font-size:13px; line-height:1.6;">Si el botón no funciona, copia este enlace:</p>
+                <p style="margin:0 0 24px; font-size:13px; line-height:1.6; word-break:break-all;">
+                  <a href="{{ .ConfirmationURL }}" style="color:#8B6914;">{{ .ConfirmationURL }}</a>
+                </p>
+                <p style="margin:0; padding:14px; background:#FEF9EC; border:1px solid #E8D59A; border-radius:12px; color:#57534E; font-size:13px; line-height:1.6;">
+                  Si no solicitaste este cambio, ignora el mensaje y revisa la seguridad de tu cuenta. Tu correo actual no cambiará.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 32px; background:#FEF9EC; color:#78716C; font-size:12px; line-height:1.6;">
+                Organiza tu tiempo. Controla tu dinero. Mejora tu día.<br>
+                ¿Necesitas ayuda? manage.your.day.oficial@gmail.com
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

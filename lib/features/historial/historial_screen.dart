@@ -223,6 +223,7 @@ class _HistorialScreenState extends State<HistorialScreen> {
           ),
           const SizedBox(height: 10),
           SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [

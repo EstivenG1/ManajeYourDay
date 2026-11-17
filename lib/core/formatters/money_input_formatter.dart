@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../settings/app_settings.dart';
 
+final _digitPattern = RegExp(r'\d');
+
 String get sufijoMonedaEntrada => AppSettings.instance.currency;
 
 String get _separadorMiles =>
@@ -12,8 +14,7 @@ String get _separadorMiles =>
 
 String get _separadorDecimal => _separadorMiles == ',' ? '.' : ',';
 
-String formatearMontoEntrada(String value) =>
-    _agruparMonto(_normalizar(value));
+String formatearMontoEntrada(String value) => _agruparMonto(_normalizar(value));
 
 String formatearMontoParaCampo(num value) {
   final fijo = value.toStringAsFixed(2);
@@ -53,7 +54,7 @@ String _normalizar(String value) {
   final separadorDecimal = _separadorDecimal;
 
   for (final char in value.split('')) {
-    if (RegExp(r'\d').hasMatch(char)) {
+    if (_digitPattern.hasMatch(char)) {
       if (!separadorDecimalAgregado) {
         buffer.write(char);
       } else if (digitosDecimales < 2) {
@@ -142,19 +143,18 @@ class MoneyInputFormatter extends TextInputFormatter {
     );
   }
 
-  int _semanticLength(String value) =>
-      value
-          .split('')
-          .where(
-            (char) => RegExp(r'\d').hasMatch(char) || char == _separadorDecimal,
-          )
-          .length;
+  int _semanticLength(String value) => value
+      .split('')
+      .where(
+        (char) => _digitPattern.hasMatch(char) || char == _separadorDecimal,
+      )
+      .length;
 
   int _offsetForSemanticPosition(String value, int position) {
     if (position == 0) return 0;
     var semanticLength = 0;
     for (var index = 0; index < value.length; index++) {
-      if (RegExp(r'\d').hasMatch(value[index]) ||
+      if (_digitPattern.hasMatch(value[index]) ||
           value[index] == _separadorDecimal) {
         semanticLength++;
       }

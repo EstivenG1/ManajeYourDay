@@ -59,6 +59,7 @@ dependencies:
   excel_plus: ^2.27.1
   url_launcher: ^6.3.3
   connectivity_plus: ^6.1.1
+  qr_flutter: 4.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter

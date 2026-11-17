@@ -570,13 +570,15 @@ class _MovimientoRecurrenteFormState extends State<_MovimientoRecurrenteForm> {
           20,
           20,
           20,
-          MediaQuery.of(context).viewInsets.bottom + 20,
+          MediaQuery.viewInsetsOf(context).bottom + 20,
         ),
         child: _cargando
             ? const Center(child: CircularProgressIndicator())
             : Form(
                 key: _formKey,
                 child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,

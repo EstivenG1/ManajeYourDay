@@ -212,7 +212,7 @@ class PlanService {
         .eq('plan', 'premium')
         .eq('billing_period', 'monthly')
         .eq('trial_days', 7)
-        .inFilter('status', ['pending', 'authorized', 'paused', 'cancelled'])
+        .not('trial_started_at', 'is', null)
         .limit(1)
         .maybeSingle();
     return trial != null;

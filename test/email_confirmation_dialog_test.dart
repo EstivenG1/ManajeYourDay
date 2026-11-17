@@ -35,12 +35,18 @@ void main() {
 
     expect(find.text('¡Tu cuenta casi está lista!'), findsOneWidget);
     expect(find.text(email), findsOneWidget);
-    expect(find.text('Ve al correo de la cuenta que ingresaste.'), findsOneWidget);
+    expect(
+      find.text('Ve al correo de la cuenta que ingresaste.'),
+      findsOneWidget,
+    );
     expect(
       find.textContaining('correo de confirmación de cuenta de MYD'),
       findsOneWidget,
     );
-    expect(find.textContaining('botón “Confirmar correo”'), findsOneWidget);
+    expect(
+      find.textContaining('cualquier dispositivo con navegador'),
+      findsOneWidget,
+    );
     expect(
       find.text('Vuelve a MYD e inicia sesión con tu correo y contraseña.'),
       findsOneWidget,

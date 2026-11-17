@@ -436,7 +436,7 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
             .eq('id', movimientoGuardado['id']);
       }
 
-      if (descripcion.isNotEmpty) {
+      if (descripcion.isNotEmpty && _tipo == 'gasto') {
         await SugerenciasService.registrarUso(
           '${_tipo}_descripcion',
           descripcion,
@@ -503,6 +503,8 @@ class _TransactionFormScreenState extends State<TransactionFormScreen> {
                 ),
               )
             : SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.all(20),
                 child: Form(
                   key: _formKey,

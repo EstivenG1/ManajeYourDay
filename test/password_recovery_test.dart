@@ -17,13 +17,14 @@ void main() {
     expect(redirect, 'https://estiveng1.github.io/ManajeYourDay/');
   });
 
-  test('native password recovery keeps the app deep link', () {
+  test('native password recovery uses a public web redirect', () {
     final redirect = SupabaseConfig.passwordRecoveryRedirectFor(
       isWeb: false,
       currentUri: Uri.parse('https://example.test/'),
     );
 
     expect(redirect, SupabaseConfig.passwordRecoveryRedirect);
+    expect(redirect, startsWith('https://'));
   });
 
   test('web signup confirmation returns to the current web app URL', () {
@@ -44,6 +45,27 @@ void main() {
     );
 
     expect(redirect, SupabaseConfig.authCallbackRedirect);
+  });
+
+  test('native email confirmation uses a public web redirect', () {
+    final redirect = SupabaseConfig.emailConfirmationRedirectFor(
+      isWeb: false,
+      currentUri: Uri.parse('https://example.test/'),
+    );
+
+    expect(redirect, SupabaseConfig.emailConfirmationRedirect);
+    expect(redirect, startsWith('https://'));
+  });
+
+  test('web email confirmation returns to the current web app URL', () {
+    final redirect = SupabaseConfig.emailConfirmationRedirectFor(
+      isWeb: true,
+      currentUri: Uri.parse(
+        'https://estiveng1.github.io/ManajeYourDay/?old=state#/perfil',
+      ),
+    );
+
+    expect(redirect, 'https://estiveng1.github.io/ManajeYourDay/');
   });
 
   test('recovery deep link remains detectable before AuthGate subscribes', () {

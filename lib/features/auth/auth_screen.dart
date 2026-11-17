@@ -85,7 +85,7 @@ class _AuthScreenState extends State<AuthScreen> {
           : await supabase.auth.signUp(
               email: _correoCtrl.text.trim(),
               password: _passwordCtrl.text,
-              emailRedirectTo: SupabaseConfig.currentAuthCallbackRedirect,
+              emailRedirectTo: SupabaseConfig.currentEmailConfirmationRedirect,
               data: {
                 'nombre': _nombreCtrl.text.trim(),
                 'apellido': _apellidoCtrl.text.trim().isEmpty
@@ -152,6 +152,7 @@ class _AuthScreenState extends State<AuthScreen> {
       backgroundColor: AppColors.bgPrimary,
       body: SafeArea(
         child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           child: Column(
             children: [
               _encabezado(),

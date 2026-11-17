@@ -29,7 +29,7 @@ class MydApp extends StatelessWidget {
       animation: settings,
       builder: (context, _) => MaterialApp(
         navigatorKey: mydNavigatorKey,
-        title: 'Manage Your Day',
+        title: 'MYD',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.light,
         darkTheme: AppTheme.dark,
@@ -41,7 +41,7 @@ class MydApp extends StatelessWidget {
           ...GlobalMaterialLocalizations.delegates,
         ],
         builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context)
+          data: MediaQueryData.fromView(View.of(context))
               .copyWith(textScaler: TextScaler.linear(settings.textScale)),
           child: child!,
         ),

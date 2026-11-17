@@ -76,16 +76,18 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
           left: 20,
           right: 20,
           top: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          bottom: MediaQuery.viewInsetsOf(context).bottom + 20,
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Agregar aporte',
-              style: AppTypography.screenTitle.copyWith(fontSize: 18),
-            ),
+        child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Agregar aporte',
+                style: AppTypography.screenTitle.copyWith(fontSize: 18),
+              ),
             const SizedBox(height: 16),
             Text('MONTO', style: AppTypography.sectionLabel),
             const SizedBox(height: 8),
@@ -138,8 +140,9 @@ class _MetaDetalleScreenState extends State<MetaDetalleScreen> {
                 ),
               ),
             ),
-          ],
-        ),
+              ],
+            ),
+          ),
       ),
     );
 

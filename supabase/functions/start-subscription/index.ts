@@ -511,12 +511,12 @@ Deno.serve(async (request: Request) => {
   if (trialDays === 7) {
     const { data: usedTrial, error: trialLookupError } = await adminClient
       .from("billing_subscriptions")
-      .select("id")
+      .select("id, trial_started_at")
       .eq("user_id", user.id)
       .eq("plan", "premium")
       .eq("billing_period", "monthly")
       .eq("trial_days", 7)
-      .in("status", ["pending", "authorized", "paused", "cancelled"])
+      .not("trial_started_at", "is", null)
       .limit(1)
       .maybeSingle();
     if (trialLookupError) {

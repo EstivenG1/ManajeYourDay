@@ -45,7 +45,9 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.of(context).popUntil((route) => route.isFirst);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se pudo iniciar sesión. Intenta de nuevo.')),
+          const SnackBar(
+            content: Text('No se pudo iniciar sesión. Intenta de nuevo.'),
+          ),
         );
       }
     } catch (e) {
@@ -88,6 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
         child: LayoutBuilder(
           builder: (context, constraints) {
             return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               child: ConstrainedBox(
                 constraints: BoxConstraints(minHeight: constraints.maxHeight),
@@ -95,14 +98,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _header(),
+                      RepaintBoundary(child: _header()),
                       const SizedBox(height: 28),
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
                           color: AppColors.surface,
                           borderRadius: BorderRadius.circular(AppRadii.xl2),
-                          border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+                          border: Border.all(
+                            color: AppColors.borderSoft,
+                            width: AppRadii.borderWidth,
+                          ),
                           boxShadow: [
                             BoxShadow(
                               color: AppColors.gold.withValues(alpha: 0.08),
@@ -137,12 +143,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                 textInputAction: TextInputAction.next,
                                 autocorrect: false,
                                 enableSuggestions: false,
-                                decoration: const InputDecoration(hintText: 'tu@email.com'),
+                                decoration: const InputDecoration(
+                                  hintText: 'tu@email.com',
+                                ),
                                 validator: (value) {
                                   if (value == null || value.trim().isEmpty) {
                                     return 'Ingresa tu correo';
                                   }
-                                  final regex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
+                                  final regex = RegExp(
+                                    r'^[\w.+-]+@[\w-]+\.[\w.-]+$',
+                                  );
                                   if (!regex.hasMatch(value.trim())) {
                                     return 'Correo no válido';
                                   }
@@ -159,9 +169,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 decoration: InputDecoration(
                                   hintText: '••••••••',
                                   suffixIcon: IconButton(
-                                    onPressed: () => setState(() => _mostrarPassword = !_mostrarPassword),
+                                    onPressed: () => setState(
+                                      () =>
+                                          _mostrarPassword = !_mostrarPassword,
+                                    ),
                                     icon: Icon(
-                                      _mostrarPassword ? Icons.visibility_off : Icons.visibility,
+                                      _mostrarPassword
+                                          ? Icons.visibility_off
+                                          : Icons.visibility,
                                       color: AppColors.textTertiary,
                                       size: 20,
                                     ),
@@ -181,8 +196,11 @@ class _LoginScreenState extends State<LoginScreen> {
                               Align(
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
-                                  onPressed: () => _proximamente('restablecer contraseña'),
-                                  child: const Text('¿Olvidaste tu contraseña?'),
+                                  onPressed: () =>
+                                      _proximamente('restablecer contraseña'),
+                                  child: const Text(
+                                    '¿Olvidaste tu contraseña?',
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 18),
@@ -199,7 +217,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               _textoConAccion(
                                 '¿No tienes cuenta? ',
                                 'Regístrate gratis',
-                                () => Navigator.of(context).pushNamed('/register'),
+                                () =>
+                                    Navigator.of(context)
+                                        .pushNamed('/register'),
                               ),
                             ],
                           ),
@@ -211,7 +231,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: _textoConAccion(
                           'Ya estás en el momento correcto. ',
                           'Volver al inicio',
-                          () => Navigator.of(context).popUntil((route) => route.isFirst),
+                          () =>
+                              Navigator.of(context)
+                                  .popUntil((route) => route.isFirst),
                         ),
                       ),
                     ],
@@ -230,7 +252,10 @@ class _LoginScreenState extends State<LoginScreen> {
       padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [AppColors.goldChipBg, AppColors.goldBorder.withValues(alpha: 0.7)],
+          colors: [
+            AppColors.goldChipBg,
+            AppColors.goldBorder.withValues(alpha: 0.7),
+          ],
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
         ),
@@ -257,10 +282,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          Text(
-            'MYD',
-            style: AppTypography.heroTitle,
-          ),
+          Text('MYD', style: AppTypography.heroTitle),
           const SizedBox(height: 4),
           Text(
             'MANEJA TU DÍA',
@@ -331,7 +353,9 @@ class _LoginScreenState extends State<LoginScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12),
           child: Text(
             texto,
-            style: AppTypography.secondary.copyWith(color: AppColors.textTertiary),
+            style: AppTypography.secondary.copyWith(
+              color: AppColors.textTertiary,
+            ),
           ),
         ),
         Expanded(child: Divider(color: AppColors.borderSoft)),
@@ -352,7 +376,10 @@ class _LoginScreenState extends State<LoginScreen> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(AppRadii.xl2),
-          border: Border.all(color: AppColors.borderSoft, width: AppRadii.borderWidth),
+          border: Border.all(
+            color: AppColors.borderSoft,
+            width: AppRadii.borderWidth,
+          ),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -376,7 +403,9 @@ class _LoginScreenState extends State<LoginScreen> {
     return Center(
       child: RichText(
         text: TextSpan(
-          style: AppTypography.secondary.copyWith(color: AppColors.textSecondary),
+          style: AppTypography.secondary.copyWith(
+            color: AppColors.textSecondary,
+          ),
           children: [
             TextSpan(text: texto),
             TextSpan(

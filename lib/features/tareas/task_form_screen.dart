@@ -291,6 +291,7 @@ class _TaskFormScreenState extends State<TaskFormScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           padding: const EdgeInsets.all(20),
           child: Form(
             key: _formKey,

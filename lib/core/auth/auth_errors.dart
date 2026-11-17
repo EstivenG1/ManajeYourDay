@@ -42,8 +42,8 @@ String mensajeErrorAuth(Object error) {
       return 'El correo ingresado no es válido.';
     }
     if (mensaje.contains('email not confirmed')) {
-      return 'Tu correo aún no está confirmado. Puedes seguir usando la app; '
-          'la confirmación es opcional.';
+      return 'Tu correo aún no está confirmado. Confírmalo desde el enlace '
+          'recibido y luego vuelve a iniciar sesión.';
     }
     return 'Ocurrió un problema: ${error.message}';
   }

@@ -26,7 +26,9 @@ class _HomeShellState extends State<HomeShell> {
   int _tabActual = 0;
   int _planRefreshToken = 0;
   int _reportesHoyToken = 0;
+  late final PageController _pageController;
   Map<String, dynamic>? _perfil;
+  final List<Widget?> _tabWidgets = List<Widget?>.filled(6, null);
   final GlobalKey _inicioTourKey = GlobalKey();
   final GlobalKey _finanzasTourKey = GlobalKey();
   final GlobalKey _tareasTourKey = GlobalKey();
@@ -47,6 +49,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    _pageController = PageController();
     _cargarPerfil();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _iniciarTour();
@@ -183,23 +186,41 @@ class _HomeShellState extends State<HomeShell> {
       data['avatar_url'] = await ProfileAvatarService.resolve(
         data['avatar_url'] as String?,
       );
-      if (mounted) setState(() => _perfil = data);
+      if (mounted) {
+        setState(() {
+          _perfil = data;
+          _tabWidgets[0] = null;
+        });
+      }
     } catch (error) {
       debugPrint('Unable to load current profile: $error');
     }
   }
 
-  void _irATab(int index) => setState(() => _tabActual = index);
+  void _irATab(int index) {
+    if (_tabActual == index) return;
+    setState(() => _tabActual = index);
+    if (_pageController.hasClients) {
+      _pageController.jumpToPage(index);
+    }
+  }
 
   void _irAReportesHoy() {
     setState(() {
       _tabActual = 3;
       _reportesHoyToken++;
       _planRefreshToken++;
+      _tabWidgets[0] = null;
+      _tabWidgets[3] = null;
     });
   }
 
-  void _finanzasActivadas() => setState(() => _planRefreshToken++);
+  void _finanzasActivadas() {
+    setState(() {
+      _planRefreshToken++;
+      _tabWidgets[0] = null;
+    });
+  }
 
   Future<void> _abrirPlanes() async {
     await Navigator.push(
@@ -210,7 +231,10 @@ class _HomeShellState extends State<HomeShell> {
       ),
     );
     if (mounted) {
-      setState(() => _planRefreshToken++);
+      setState(() {
+        _planRefreshToken++;
+        _tabWidgets[0] = null;
+      });
       _cargarPerfil();
     }
   }
@@ -288,6 +312,14 @@ class _HomeShellState extends State<HomeShell> {
                   appText(context, 'Mi perfil', 'My profile'),
                   style: AppTypography.itemTitle,
                 ),
+                subtitle: Text(
+                  appText(
+                    context,
+                    'Consulta y edita tus datos personales',
+                    'Review and edit your personal details',
+                  ),
+                  style: AppTypography.secondary,
+                ),
                 onTap: () async {
                   Navigator.pop(context);
                   await Navigator.push(
@@ -331,6 +363,14 @@ class _HomeShellState extends State<HomeShell> {
                   ),
                   style: AppTypography.itemTitle,
                 ),
+                subtitle: Text(
+                  appText(
+                    context,
+                    'Revisa tus movimientos y acciones recientes',
+                    'Review your recent activity and actions',
+                  ),
+                  style: AppTypography.secondary,
+                ),
                 onTap: () {
                   Navigator.pop(context);
                   Navigator.push(
@@ -362,27 +402,35 @@ class _HomeShellState extends State<HomeShell> {
     final nombre = _perfil?['nombre'] as String?;
     final avatarUrl = _perfil?['avatar_url'] as String?;
 
-    final tabs = [
-      HomeTab(
-        nombre: nombre,
-        onVerTareas: () => _irATab(2),
-        onVerFinanzas: () => _irATab(1),
-        onVerPlanes: _abrirPlanes,
-        planRefreshToken: _planRefreshToken,
-      ),
-      FinanzasScreen(
-        onPrimerIngresoRegistrado: _irAReportesHoy,
-        onFinanzasActivadas: _finanzasActivadas,
-      ),
-      TareasScreen(active: _tabActual == 2),
-      ReportesScreen(
-        hoyToken: _reportesHoyToken,
-        active: _tabActual == 3,
-        onOpenFinanzas: () => _irATab(1),
-      ),
-      NotasScreen(active: _tabActual == 4),
-      const MiYiDiScreen(),
-    ];
+    Widget tabAt(int index) {
+      final cached = _tabWidgets[index];
+      if (cached != null) return cached;
+
+      final tab = switch (index) {
+        0 => HomeTab(
+          nombre: nombre,
+          onVerTareas: () => _irATab(2),
+          onVerFinanzas: () => _irATab(1),
+          onVerPlanes: _abrirPlanes,
+          planRefreshToken: _planRefreshToken,
+        ),
+        1 => FinanzasScreen(
+          onPrimerIngresoRegistrado: _irAReportesHoy,
+          onFinanzasActivadas: _finanzasActivadas,
+        ),
+        2 => TareasScreen(active: true),
+        3 => ReportesScreen(
+          hoyToken: _reportesHoyToken,
+          active: true,
+          onOpenFinanzas: () => _irATab(1),
+        ),
+        4 => const NotasScreen(active: true),
+        5 => const MiYiDiScreen(),
+        _ => const SizedBox.shrink(),
+      };
+      _tabWidgets[index] = tab;
+      return tab;
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bgPrimary,
@@ -416,7 +464,16 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      body: IndexedStack(index: _tabActual, children: tabs),
+      body: PageView.builder(
+        controller: _pageController,
+        itemCount: _tabWidgets.length,
+        physics: const NeverScrollableScrollPhysics(),
+        onPageChanged: (index) {
+          if (_tabActual != index) setState(() => _tabActual = index);
+        },
+        itemBuilder: (context, index) =>
+            _CachedTab(key: ValueKey(index), child: tabAt(index)),
+      ),
       bottomNavigationBar: NavigationBar(
         height: 76,
         backgroundColor: AppColors.navBlurBg,
@@ -473,5 +530,32 @@ class _HomeShellState extends State<HomeShell> {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+}
+
+class _CachedTab extends StatefulWidget {
+  const _CachedTab({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<_CachedTab> createState() => _CachedTabState();
+}
+
+class _CachedTabState extends State<_CachedTab>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

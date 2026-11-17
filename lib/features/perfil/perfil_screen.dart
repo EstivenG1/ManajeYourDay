@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -12,6 +14,7 @@ import '../../core/services/notification_service.dart';
 import '../../core/services/plan_service.dart';
 import '../../core/services/profile_avatar_service.dart';
 import '../legal/centro_ayuda_screen.dart';
+import 'perfil_action_dialogs.dart';
 
 class PerfilScreen extends StatefulWidget {
   final Future<void> Function()? onReplayTour;
@@ -34,6 +37,8 @@ String? _textoMetadata(Map<String, dynamic> metadata, String key) {
 
 class _PerfilScreenState extends State<PerfilScreen>
     with WidgetsBindingObserver {
+  bool _mfaConfiguring = false;
+
   bool get _supportsMercadoPagoCheckout =>
       kIsWeb || defaultTargetPlatform == TargetPlatform.android;
 
@@ -737,12 +742,14 @@ class _PerfilScreenState extends State<PerfilScreen>
       _moneda = data?['moneda'] as String? ?? AppSettings.instance.currency;
       _idioma = data?['idioma'] as String? ?? AppSettings.instance.language;
 
-      _avatarUrl = await ProfileAvatarService.resolve(
+      final avatarFuture = ProfileAvatarService.resolve(
         data?['avatar_url'] as String?,
       );
-      final imagenesPerfil = await supabase.storage
+      final imagenesFuture = supabase.storage
           .from('avatars')
           .list(path: userId);
+      _avatarUrl = await avatarFuture;
+      final imagenesPerfil = await imagenesFuture;
       if (imagenesPerfil.any((imagen) => imagen.name == 'cover.jpg')) {
         _portadaUrl = await ProfileAvatarService.resolve('$userId/cover.jpg');
       } else {
@@ -991,6 +998,380 @@ class _PerfilScreenState extends State<PerfilScreen>
         });
       }
     }
+  }
+
+  Future<void> _cambiarContrasena() async {
+    final nuevaCtrl = TextEditingController();
+    final confirmarCtrl = TextEditingController();
+    var mostrarNueva = false;
+    var mostrarConfirmacion = false;
+
+    final cambioSolicitado = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(
+            appText(context, 'Cambiar contraseña', 'Change password'),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nuevaCtrl,
+                obscureText: !mostrarNueva,
+                decoration: InputDecoration(
+                  labelText: appText(
+                    context,
+                    'Nueva contraseña',
+                    'New password',
+                  ),
+                  suffixIcon: IconButton(
+                    onPressed: () =>
+                        setDialogState(() => mostrarNueva = !mostrarNueva),
+                    icon: Icon(
+                      mostrarNueva
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmarCtrl,
+                obscureText: !mostrarConfirmacion,
+                decoration: InputDecoration(
+                  labelText: appText(
+                    context,
+                    'Confirmar contraseña',
+                    'Confirm password',
+                  ),
+                  suffixIcon: IconButton(
+                    onPressed: () => setDialogState(
+                      () => mostrarConfirmacion = !mostrarConfirmacion,
+                    ),
+                    icon: Icon(
+                      mostrarConfirmacion
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  appText(
+                    context,
+                    'Usa al menos 6 caracteres.',
+                    'Use at least 6 characters.',
+                  ),
+                  style: AppTypography.secondary,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(appText(context, 'Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (nuevaCtrl.text.length < 6 ||
+                    nuevaCtrl.text != confirmarCtrl.text) {
+                  ScaffoldMessenger.of(this.context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        appText(
+                          this.context,
+                          'La contraseña debe tener al menos 6 caracteres y coincidir en ambos campos.',
+                          'The password must have at least 6 characters and match in both fields.',
+                        ),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.of(dialogContext).pop(true);
+              },
+              child: Text(appText(context, 'Guardar', 'Save')),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final nuevaContrasena = nuevaCtrl.text;
+    nuevaCtrl.dispose();
+    confirmarCtrl.dispose();
+    if (cambioSolicitado != true || !mounted) return;
+
+    try {
+      await supabase.auth.updateUser(UserAttributes(password: nuevaContrasena));
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => const PasswordChangedDialog(),
+      );
+    } on AuthException catch (error) {
+      if (mounted) _mostrarErrorPerfil(error.message);
+    }
+  }
+
+  Future<void> _cambiarCorreo() async {
+    final nuevoCorreo = await showDialog<String>(
+      context: context,
+      builder: (_) => EmailChangeRequestDialog(initialEmail: _correo ?? ''),
+    );
+    if (nuevoCorreo == null || !mounted) return;
+
+    try {
+      await supabase.auth.updateUser(
+        UserAttributes(email: nuevoCorreo),
+        emailRedirectTo: SupabaseConfig.currentEmailConfirmationRedirect,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => EmailChangeConfirmationDialog(email: nuevoCorreo),
+      );
+    } on AuthException catch (error) {
+      if (mounted) _mostrarErrorPerfil(error.message);
+    }
+  }
+
+  Future<void> _invitarUsuarios() async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => InviteUsersDialog(
+        onShare: () async {
+          await SharePlus.instance.share(
+            ShareParams(
+              subject: 'Invitación a MYD',
+              text: 'Te invito a probar MYD para organizar tus tareas, finanzas y metas: https://estiveng1.github.io/ManajeYourDay/',
+            ),
+          );
+          if (mounted && Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        },
+      ),
+    );
+  }
+
+  Future<void> _configurarMfa() async {
+    if (_mfaConfiguring) return;
+    _mfaConfiguring = true;
+    try {
+      await _configurarMfaInternal();
+    } finally {
+      _mfaConfiguring = false;
+    }
+  }
+
+  Future<void> _configurarMfaInternal() async {
+    late final AuthMFAListFactorsResponse factors;
+    try {
+      factors = await supabase.auth.mfa.listFactors();
+    } on AuthException catch (error) {
+      if (mounted) _mostrarErrorPerfil(error.message);
+      return;
+    }
+    final factor = factors.totp
+        .where((item) => item.status == FactorStatus.verified)
+        .firstOrNull;
+    if (factor != null) {
+      final remove = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(appText(context, 'Desactivar MFA', 'Disable MFA')),
+          content: Text(
+            appText(
+              context,
+              '¿Quieres eliminar la app autenticadora de tu cuenta?',
+              'Do you want to remove the authenticator app from your account?',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: Text(appText(context, 'Cancelar', 'Cancel')),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: Text(appText(context, 'Desactivar', 'Disable')),
+            ),
+          ],
+        ),
+      );
+      if (remove != true || !mounted) return;
+      try {
+        await supabase.auth.mfa.unenroll(factor.id);
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (_) => const MfaMethodRemovedDialog(),
+        );
+      } on AuthException catch (error) {
+        if (mounted) _mostrarErrorPerfil(error.message);
+      }
+      return;
+    }
+
+    for (final pendingFactor in factors.totp.where(
+      (item) => item.status == FactorStatus.unverified,
+    )) {
+      try {
+        await supabase.auth.mfa.unenroll(pendingFactor.id);
+      } on AuthException catch (error) {
+        if (error.code != 'mfa_factor_not_found') {
+          if (mounted) _mostrarErrorPerfil(error.message);
+          return;
+        }
+      }
+    }
+
+    late final AuthMFAEnrollResponse enrollment;
+    try {
+      enrollment = await supabase.auth.mfa.enroll(
+        factorType: FactorType.totp,
+        friendlyName: 'MYD Authenticator',
+        issuer: 'Manage Your Day',
+      );
+    } on AuthException catch (error) {
+      if (error.code != 'mfa_factor_name_conflict') {
+        if (mounted) _mostrarErrorPerfil(error.message);
+        return;
+      }
+      try {
+        enrollment = await supabase.auth.mfa.enroll(
+          factorType: FactorType.totp,
+          friendlyName:
+              'MYD Authenticator ${DateTime.now().millisecondsSinceEpoch}',
+          issuer: 'Manage Your Day',
+        );
+      } on AuthException catch (retryError) {
+        if (mounted) _mostrarErrorPerfil(retryError.message);
+        return;
+      }
+    }
+    final totp = enrollment.totp;
+    if (totp == null || !mounted) return;
+    final codeController = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        child: SafeArea(
+          child: SizedBox(
+            width: 360,
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      appText(context, 'Activar MFA', 'Enable MFA'),
+                      style: Theme.of(context).textTheme.titleLarge,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      appText(
+                        context,
+                        'Escanea este QR con tu app autenticadora y escribe el código de 6 dígitos.',
+                        'Scan this QR with your authenticator app and enter the 6-digit code.',
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      color: Colors.white,
+                      child: QrImageView(data: totp.uri, size: 220),
+                    ),
+                    const SizedBox(height: 14),
+                    SelectableText(
+                      totp.secret,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: codeController,
+                      keyboardType: TextInputType.number,
+                      maxLength: 6,
+                      decoration: InputDecoration(
+                        labelText: appText(
+                          context,
+                          'Código de la app',
+                          'Authenticator code',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.of(dialogContext).pop(),
+                          child: Text(appText(context, 'Cancelar', 'Cancel')),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton(
+                          onPressed: () =>
+                              Navigator.of(dialogContext)
+                                  .pop(codeController.text.trim()),
+                          child: Text(appText(context, 'Verificar', 'Verify')),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final enrollmentCode = codeController.text.trim();
+    codeController.dispose();
+    if (code == null || !mounted) return;
+    try {
+      final challenge = await supabase.auth.mfa.challenge(
+        factorId: enrollment.id,
+      );
+      await supabase.auth.mfa.verify(
+        factorId: enrollment.id,
+        challengeId: challenge.id,
+        code: enrollmentCode,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (_) => const MfaMethodAddedDialog(),
+      );
+    } on AuthException catch (error) {
+      if (mounted) _mostrarErrorPerfil(error.message);
+    }
+  }
+
+  void _mostrarErrorPerfil(String mensaje) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          appText(
+            context,
+            'No se pudo completar la acción: $mensaje',
+            'Could not complete the action: $mensaje',
+          ),
+        ),
+      ),
+    );
   }
 
   Map<String, dynamic> _datosPerfilParaGuardar(User user, {String? avatarUrl}) {
@@ -1296,7 +1677,108 @@ class _PerfilScreenState extends State<PerfilScreen>
                               ),
                             ),
                           ],
+                          const SizedBox(height: 8),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.lock_outline_rounded,
+                              color: AppColors.textSecondary,
+                            ),
+                            title: Text(
+                              appText(
+                                context,
+                                'Cambiar contraseña',
+                                'Change password',
+                              ),
+                              style: AppTypography.itemTitle,
+                            ),
+                            subtitle: Text(
+                              appText(
+                                context,
+                                'Actualiza la contraseña de tu cuenta',
+                                'Update your account password',
+                              ),
+                              style: AppTypography.secondary,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: _cambiarContrasena,
+                          ),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.mark_email_unread_outlined,
+                              color: AppColors.textSecondary,
+                            ),
+                            title: Text(
+                              appText(
+                                context,
+                                'Cambiar dirección de correo',
+                                'Change email address',
+                              ),
+                              style: AppTypography.itemTitle,
+                            ),
+                            subtitle: Text(
+                              appText(
+                                context,
+                                'Recibirás un mensaje para confirmar el cambio',
+                                'You will receive a message to confirm the change',
+                              ),
+                              style: AppTypography.secondary,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: _cambiarCorreo,
+                          ),
+                          ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: Icon(
+                              Icons.verified_user_outlined,
+                              color: AppColors.textSecondary,
+                            ),
+                            title: Text(
+                              appText(
+                                context,
+                                'Autenticación de dos pasos (MFA)',
+                                'Two-step authentication (MFA)',
+                              ),
+                              style: AppTypography.itemTitle,
+                            ),
+                            subtitle: Text(
+                              appText(
+                                context,
+                                'Protege tu cuenta con una app autenticadora',
+                                'Protect your account with an authenticator app',
+                              ),
+                              style: AppTypography.secondary,
+                            ),
+                            trailing: const Icon(Icons.chevron_right_rounded),
+                            onTap: _configurarMfa,
+                          ),
                         ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    Card(
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.person_add_alt_1_rounded,
+                          color: AppColors.gold,
+                        ),
+                        title: Text(
+                          appText(context, 'Invitar usuarios', 'Invite users'),
+                          style: AppTypography.itemTitle,
+                        ),
+                        subtitle: Text(
+                          appText(
+                            context,
+                            'Comparte MYD con alguien de confianza',
+                            'Share MYD with someone you trust',
+                          ),
+                          style: AppTypography.secondary,
+                        ),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: _invitarUsuarios,
                       ),
                     ),
 

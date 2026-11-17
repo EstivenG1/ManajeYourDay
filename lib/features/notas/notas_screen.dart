@@ -1047,6 +1047,7 @@ class _NotaFormState extends State<_NotaForm> {
   Widget build(BuildContext context) {
     return SafeArea(
       child: SingleChildScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         child: Form(
           key: _formKey,

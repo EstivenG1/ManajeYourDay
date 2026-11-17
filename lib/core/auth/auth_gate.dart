@@ -7,6 +7,7 @@ import '../supabase/supabase_config.dart';
 import '../services/notification_service.dart';
 import '../services/profile_bootstrap_service.dart';
 import '../../features/auth/password_recovery_screen.dart';
+import '../../features/auth/mfa_verification_screen.dart';
 import '../../features/splash/welcome_screen.dart';
 import '../../features/splash/new_user_welcome_screen.dart';
 import '../../features/home/home_shell.dart';
@@ -30,6 +31,7 @@ class _AuthGateState extends State<AuthGate> {
   String? _profileError;
   String? _profileLoadingUserId;
   bool _recoveryRouteOpen = false;
+  String? _mfaFactorId;
   StreamSubscription<AuthState>? _authSubscription;
 
   @override
@@ -62,6 +64,7 @@ class _AuthGateState extends State<AuthGate> {
         if (session == null) {
           _profileReady = true;
           _profileError = null;
+          _mfaFactorId = null;
         } else if (needsProfile) {
           _profileReady = false;
           _profileError = null;
@@ -70,6 +73,7 @@ class _AuthGateState extends State<AuthGate> {
             session?.user.userMetadata?['myd_welcome_pending'] == true;
         if (authState.event == AuthChangeEvent.passwordRecovery) {
           _passwordRecoveryPending = true;
+          _mfaFactorId = null;
           SupabaseConfig.consumePasswordRecoveryRedirect();
         } else if (authState.event == AuthChangeEvent.signedOut ||
             authState.event == AuthChangeEvent.signedIn) {
@@ -100,18 +104,65 @@ class _AuthGateState extends State<AuthGate> {
     if (_profileLoadingUserId == userId) return;
     _profileLoadingUserId = userId;
     try {
+      final verifiedUser = (await supabase.auth.getUser()).user;
+      if (verifiedUser == null || verifiedUser.id != userId) {
+        await _descartarSesionInvalida();
+        return;
+      }
       await ProfileBootstrapService.ensureExists(session.user);
+      final factors = await supabase.auth.mfa.listFactors();
+      final verifiedFactor = factors.totp
+          .where((factor) => factor.status == FactorStatus.verified)
+          .firstOrNull;
+      final requiresMfa =
+          !_passwordRecoveryPending &&
+          verifiedFactor != null &&
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel().currentLevel !=
+              AuthenticatorAssuranceLevels.aal2;
       if (!mounted || _session?.user.id != userId) return;
       setState(() {
         _profileReady = true;
         _profileError = null;
+        _mfaFactorId = requiresMfa ? verifiedFactor.id : null;
       });
+    } on AuthException catch (error) {
+      if (_esSesionInvalida(error)) {
+        await _descartarSesionInvalida();
+        return;
+      }
+      if (!mounted || _session?.user.id != userId) return;
+      setState(() => _profileError = 'No se pudo preparar tu perfil: $error');
     } catch (error) {
       if (!mounted || _session?.user.id != userId) return;
       setState(() => _profileError = 'No se pudo preparar tu perfil: $error');
     } finally {
       if (_profileLoadingUserId == userId) _profileLoadingUserId = null;
     }
+  }
+
+  bool _esSesionInvalida(AuthException error) {
+    return error.statusCode == '401' ||
+        error.statusCode == '403' ||
+        error.statusCode == '404' ||
+        error.code == 'user_not_found' ||
+        error.code == 'session_not_found';
+  }
+
+  Future<void> _descartarSesionInvalida() async {
+    try {
+      await supabase.auth.signOut(scope: SignOutScope.local);
+    } catch (error) {
+      debugPrint('Unable to clear invalid local session: $error');
+    }
+    if (!mounted) return;
+    setState(() {
+      _session = null;
+      _profileReady = true;
+      _profileError = null;
+      _mfaFactorId = null;
+      _showNewUserWelcome = false;
+      _passwordRecoveryPending = false;
+    });
   }
 
   Future<void> _reintentarPrepararPerfil() async {
@@ -149,12 +200,32 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   void _completePasswordRecovery() {
+    unawaited(_finishPasswordRecovery());
+  }
+
+  Future<void> _finishPasswordRecovery() async {
     if (!mounted) return;
     setState(() => _passwordRecoveryPending = false);
-    final navigator = mydNavigatorKey.currentState;
-    if (_recoveryRouteOpen && navigator?.canPop() == true) {
-      navigator!.pop();
+    try {
+      await supabase.auth.signOut();
+      final navigator = mydNavigatorKey.currentState;
+      if (_recoveryRouteOpen && navigator?.canPop() == true) {
+        navigator!.pop();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _passwordRecoveryPending = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo cerrar la sesión de recuperación: $error'),
+        ),
+      );
     }
+  }
+
+  void _completeMfa() {
+    if (!mounted) return;
+    setState(() => _mfaFactorId = null);
   }
 
   Future<void> _completeNewUserWelcome() async {
@@ -193,9 +264,19 @@ class _AuthGateState extends State<AuthGate> {
               children: [
                 Text(_profileError!, textAlign: TextAlign.center),
                 const SizedBox(height: 12),
-                FilledButton(
-                  onPressed: _reintentarPrepararPerfil,
-                  child: const Text('Reintentar'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    OutlinedButton(
+                      onPressed: _reintentarPrepararPerfil,
+                      child: const Text('Reintentar'),
+                    ),
+                    const SizedBox(width: 12),
+                    FilledButton(
+                      onPressed: _descartarSesionInvalida,
+                      child: const Text('Cerrar sesión'),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -204,12 +285,16 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
     if (_session != null && !_profileReady) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (_passwordRecoveryPending && _session != null) {
       return PasswordRecoveryScreen(onCompleted: _completePasswordRecovery);
+    }
+    if (_session != null && _mfaFactorId != null) {
+      return MfaVerificationScreen(
+        factorId: _mfaFactorId!,
+        onVerified: _completeMfa,
+      );
     }
 
     if (_session != null && _showNewUserWelcome) {

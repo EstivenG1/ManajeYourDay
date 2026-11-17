@@ -190,23 +190,78 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
   Widget _tarjeta(Map<String, dynamic> presupuesto) {
     final limite = (presupuesto['monto_limite'] as num).toDouble();
     final gastado = _gastos[presupuesto['id'].toString()] ?? 0;
-    final progreso = limite <= 0 ? 0.0 : (gastado / limite).clamp(0.0, 1.0);
-    final excedido = gastado > limite;
-    final color = excedido ? AppColors.red : AppColors.green;
+    final porcentaje = limite <= 0 ? 0.0 : gastado / limite;
+    final progreso = porcentaje.clamp(0.0, 1.0);
+    final (color, estado) = switch (porcentaje) {
+      > 1 => (Colors.red.shade700, appText(context, 'Excedido', 'Over budget')),
+      >= 0.9 => (
+        Colors.red.shade400,
+        appText(context, 'Cerca del límite', 'Near the limit'),
+      ),
+      >= 0.7 => (
+        Colors.orange.shade700,
+        appText(context, 'En vigilancia', 'Watch closely'),
+      ),
+      _ => (
+        Colors.green.shade700,
+        appText(context, 'En buen camino', 'On track'),
+      ),
+    };
+    final categoria =
+        presupuesto['categorias']?['nombre'] as String? ?? 'Categoría';
+    final emoji = presupuesto['emoji'] as String? ?? '💰';
+    final diferencia = gastado > limite ? gastado - limite : limite - gastado;
 
     return Card(
+      color: color.withValues(alpha: 0.12),
       margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: color.withValues(alpha: 0.3)),
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(emoji, style: const TextStyle(fontSize: 26)),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    presupuesto['categorias']?['nombre'] ?? 'Categoría',
-                    style: AppTypography.itemTitle,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(categoria, style: AppTypography.itemTitle),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          estado,
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -221,9 +276,16 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
                 ),
               ],
             ),
-            Text(
-              '${presupuesto['fecha_inicio']} – ${presupuesto['fecha_fin']}',
-              style: AppTypography.secondary,
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Icon(Icons.date_range_outlined, size: 17, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  '${presupuesto['fecha_inicio']} – ${presupuesto['fecha_fin']}',
+                  style: AppTypography.secondary,
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             LinearProgressIndicator(
@@ -234,10 +296,47 @@ class _PresupuestosScreenState extends State<PresupuestosScreen> {
               borderRadius: BorderRadius.circular(8),
             ),
             const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(
+                  child: Text(
+                    '${formatearMonto(gastado)} de ${formatearMonto(limite)}',
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${(porcentaje * 100).round()}%',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
             Text(
-              '${formatearMonto(gastado)} de ${formatearMonto(limite)} · '
-              '${excedido ? 'Excedido por ${formatearMonto(gastado - limite)}' : 'Disponible ${formatearMonto(limite - gastado)}'}',
-              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+              gastado > limite
+                  ? appText(
+                      context,
+                      'Excedido por ${formatearMonto(diferencia)}',
+                      'Over by ${formatearMonto(diferencia)}',
+                    )
+                  : appText(
+                      context,
+                      'Disponible ${formatearMonto(diferencia)}',
+                      '${formatearMonto(diferencia)} remaining',
+                    ),
+              style: TextStyle(
+                color: color.withValues(alpha: 0.9),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
@@ -257,6 +356,21 @@ class _PresupuestoForm extends StatefulWidget {
 }
 
 class _PresupuestoFormState extends State<_PresupuestoForm> {
+  static const _emojis = [
+    '💰',
+    '🍔',
+    '🏠',
+    '🚗',
+    '🛒',
+    '🎓',
+    '💊',
+    '🎉',
+    '🐾',
+    '📱',
+    '✈️',
+    '🎯',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _monto = TextEditingController();
   final _categoriaKey = GlobalKey();
@@ -267,6 +381,7 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
   final _montoFocusNode = FocusNode();
   List<Map<String, dynamic>> _categorias = [];
   int? _categoria;
+  String _emoji = '💰';
   late DateTime _inicio;
   late DateTime _fin;
   bool _cargando = true;
@@ -284,6 +399,7 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
         ? DateTime(now.year, now.month + 1, 0)
         : DateTime.parse(widget.presupuesto!['fecha_fin']);
     _categoria = widget.presupuesto?['categoria_id'] as int?;
+    _emoji = widget.presupuesto?['emoji'] as String? ?? '💰';
     final montoInicial = widget.presupuesto?['monto_limite'];
     if (montoInicial is num) {
       _monto.text = formatearMontoParaCampo(montoInicial);
@@ -455,6 +571,7 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
       final datos = {
         'usuario_id': userId,
         'categoria_id': _categoria,
+        'emoji': _emoji,
         'monto_limite': parseMontoEntrada(_monto.text)!,
         'fecha_inicio': _fechaIso(_inicio),
         'fecha_fin': _fechaIso(_fin),
@@ -495,13 +612,15 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
           20,
           20,
           20,
-          MediaQuery.of(context).viewInsets.bottom + 20,
+          MediaQuery.viewInsetsOf(context).bottom + 20,
         ),
         child: _cargando
             ? const Center(child: CircularProgressIndicator())
             : Form(
                 key: _formKey,
                 child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     mainAxisSize: MainAxisSize.min,
@@ -513,6 +632,35 @@ class _PresupuestoFormState extends State<_PresupuestoForm> {
                         style: AppTypography.screenTitle,
                       ),
                       const SizedBox(height: 16),
+                      Text(
+                        appText(
+                          context,
+                          'Elige un emoji para identificarlo',
+                          'Choose an emoji to identify it',
+                        ),
+                        style: AppTypography.itemTitle,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _emojis
+                            .map(
+                              (emoji) => ChoiceChip(
+                                label: Text(
+                                  emoji,
+                                  style: const TextStyle(fontSize: 21),
+                                ),
+                                selected: _emoji == emoji,
+                                onSelected: (_) =>
+                                    setState(() => _emoji = emoji),
+                                padding: const EdgeInsets.all(7),
+                                labelPadding: EdgeInsets.zero,
+                              ),
+                            )
+                            .toList(),
+                      ),
+                      const SizedBox(height: 18),
                       DropdownButtonFormField<int>(
                         key: _categoriaKey,
                         initialValue: _categoria,

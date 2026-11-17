@@ -61,10 +61,8 @@ class EmailConfirmationDialog extends StatelessWidget {
                   'Confirm your email to sign in to MYD.',
                 ),
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textSecondary,
-                  height: 1.45,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.textSecondary, height: 1.45),
               ),
               const SizedBox(height: 18),
               Container(
@@ -120,8 +118,8 @@ class EmailConfirmationDialog extends StatelessWidget {
                 numero: '3',
                 texto: appText(
                   context,
-                  'Abre el correo y pulsa el botón “Confirmar correo”.',
-                  'Open the email and tap the “Confirm email” button.',
+                  'Abre el enlace de confirmación desde cualquier dispositivo con navegador. No necesitas tener MYD instalada en ese dispositivo.',
+                  'Open the confirmation link on any device with a browser. MYD does not need to be installed there.',
                 ),
               ),
               _PasoConfirmacion(
@@ -181,10 +179,8 @@ class _PasoConfirmacion extends StatelessWidget {
               padding: const EdgeInsets.only(top: 3),
               child: Text(
                 texto,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textSecondary,
-                  height: 1.4,
-                ),
+                style: Theme.of(context).textTheme.bodyMedium
+                    ?.copyWith(color: AppColors.textSecondary, height: 1.4),
               ),
             ),
           ),
