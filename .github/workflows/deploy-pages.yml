@@ -39,6 +39,11 @@ jobs:
       - name: Build Flutter web app
         run: flutter build web --release --base-href "/ManajeYourDay/"
 
+      - name: Add Android download page
+        run: |
+          mkdir -p build/web/descargar
+          cp web/descargar/index.html build/web/descargar/index.html
+
       - name: Disable Jekyll processing
         run: touch build/web/.nojekyll
 

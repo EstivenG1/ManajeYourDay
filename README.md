@@ -16,9 +16,13 @@ navegador. No necesitas instalar nada.
 
 ### Opción 2: instalar el APK en Android
 
-**Enlace de descarga:** `[PENDIENTE: agregar aquí la URL pública del APK]`
+**[Descargar MYD para Android](https://estiveng1.github.io/ManajeYourDay/descargar/)**
 
-Cuando el APK esté publicado:
+La página oficial muestra la versión firmada más reciente. Si todavía no hay
+un APK disponible, vuelve a intentarlo más tarde.
+
+Para configurar una nueva publicación firmada, consulta la
+[guía de publicación para Android](docs/android-release.md).
 
 1. Descarga el archivo desde el enlace oficial.
 2. Abre el archivo en tu teléfono Android.
