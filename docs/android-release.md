@@ -52,12 +52,13 @@ de repositorio `ANDROID_RELEASE_ENABLED` con valor `true`.
 Elige un tag nuevo. Comprueba primero que no exista y luego envíalo:
 
 ```powershell
-git tag v1.3.0-beta.3
-git push origin v1.3.0-beta.3
+git tag v1.3.0-beta.4
+git push origin v1.3.0-beta.4
 ```
 
-El ejemplo corresponde a la siguiente versión Beta disponible al escribir esta
-guía; usa otro tag si ya existe o si vas a publicar una versión diferente.
+El ejemplo corresponde a la siguiente versión Beta disponible tras el primer
+intento de publicación; usa otro tag si ya existe o si vas a publicar una
+versión diferente.
 GitHub Actions usa el tag como versión, firma el APK y el AAB y los adjunta a
 GitHub Releases. Los tags con guion, como `-beta.3`, se publican como
 pre-lanzamientos.
