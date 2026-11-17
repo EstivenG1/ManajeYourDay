@@ -72,3 +72,33 @@ con la misma clave; el usuario descarga e instala el APK más reciente.
 
 No subas `android/key.properties`, keystores, contraseñas ni APKs generados al
 repositorio.
+
+## Editar y actualizar la página web
+
+El contenido de la página de descarga está en
+[`web/descargar/index.html`](../web/descargar/index.html). La carpeta `build/web`
+es generada: no edites esos archivos porque se reemplazan en cada publicación.
+El workflow de GitHub Pages copia automáticamente el HTML de `web/descargar/`
+al sitio publicado.
+
+Para cambiar textos, estilos o instrucciones:
+
+1. Abre `web/descargar/index.html` en VS Code y edítalo. Puedes previsualizarlo
+   abriendo ese archivo en un navegador; el botón de APK consultará GitHub
+   Releases cuando se vea en línea.
+2. Desde la raíz del repositorio, valida y publica el cambio:
+
+   ```powershell
+   git diff --check
+   git add web/descargar/index.html
+   git commit -m "docs: update Android download page"
+   git push origin main
+   ```
+
+3. En GitHub, abre **Actions > Deploy web to GitHub Pages** y espera a que la
+   ejecución termine correctamente. Después actualiza
+   [la página pública de descarga](https://estiveng1.github.io/ManajeYourDay/descargar/).
+
+No hace falta crear otro tag ni publicar otra versión para cambiar únicamente
+la página. Para lanzar un APK nuevo, sigue los pasos de **Publicar una versión**
+y usa un tag nuevo.
