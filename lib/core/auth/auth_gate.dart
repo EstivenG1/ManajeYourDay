@@ -51,8 +51,8 @@ class _AuthGateState extends State<AuthGate> {
           SnackBar(
             duration: const Duration(seconds: 10),
             content: Text(
-              'No se pudo confirmar el correo ($authRedirectError). '
-              'Solicita un enlace nuevo e inténtalo otra vez.',
+              'No se pudo completar la autenticación ($authRedirectError). '
+              'Revisa el enlace e inténtalo otra vez.',
             ),
           ),
         );
