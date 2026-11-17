@@ -87,6 +87,28 @@
 
       .instructions ol { margin: 8px 0 0; padding-left: 22px; }
       .instructions li { margin: 6px 0; color: #57534e; line-height: 1.5; }
+      .brand-guide { margin: 28px 0; text-align: left; }
+      .brand-guide h2 { margin: 0 0 8px; font-size: 20px; }
+      .brand-guide > p { margin: 0 0 14px; font-size: 14px; }
+      .brand-guide details {
+        margin: 8px 0;
+        padding: 14px 16px;
+        border: 1px solid #ede8de;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .brand-guide summary { cursor: pointer; font-weight: 700; }
+      .brand-guide details p,
+      .brand-guide details li { color: #57534e; font-size: 14px; line-height: 1.6; }
+      .brand-guide details ol,
+      .brand-guide details ul { padding-left: 22px; }
+      .security-warning {
+        padding: 12px 14px;
+        border-left: 3px solid #b45309;
+        border-radius: 8px;
+        background: #fff7ed;
+      }
       .back { color: #8b6914; font-weight: 600; }
     </style>
   </head>
@@ -104,9 +126,53 @@
         <strong>Cómo instalar</strong>
         <ol>
           <li>Descarga el APK desde este botón.</li>
-          <li>Abre el archivo en Android y, si te lo solicita, permite instalar desde el navegador.</li>
+          <li>Abre el archivo descargado. Si Android lo solicita, permite temporalmente instalar desde la aplicación que lo descargó.</li>
           <li>Confirma la instalación. Para futuras actualizaciones, instala el APK oficial más reciente.</li>
         </ol>
+      </section>
+
+      <section class="brand-guide" aria-labelledby="brand-guide-title">
+        <h2 id="brand-guide-title">Ayuda según la marca de tu teléfono</h2>
+        <p>Selecciona tu marca para ver los pasos. Los nombres de los menús pueden variar según la versión de Android.</p>
+
+        <details>
+          <summary>Huawei / Honor: Play Protect bloqueó la instalación</summary>
+          <ol>
+            <li>Confirma que descargaste MYD desde esta página oficial y no desde un enlace reenviado o un sitio de terceros.</li>
+            <li>Si Android solo solicita permiso para instalar desde el navegador o Archivos, habilita “Permitir desde esta fuente” para esa aplicación durante la instalación y desactívalo después.</li>
+          </ol>
+          <p class="security-warning"><strong>Si Play Protect dice que la app es dañina o bloquea explícitamente su instalación, no desactives Play Protect ni fuerces la instalación.</strong> Cancela, verifica que Play Protect esté actualizado y vuelve a analizar el teléfono. Si el bloqueo continúa, contáctanos desde el centro de ayuda de MYD.</p>
+        </details>
+
+        <details>
+          <summary>Redmi / Xiaomi / POCO: conflicto con el paquete</summary>
+          <p>Este mensaje suele aparecer cuando ya hay una copia de MYD instalada con otra firma, por ejemplo una versión de prueba instalada desde Flutter. Android no permite actualizar esa copia directamente con el APK firmado de publicación.</p>
+          <ol>
+            <li>Antes de quitar la copia anterior, confirma que puedes iniciar sesión y que tus datos están sincronizados con tu cuenta. Desinstalar puede borrar ajustes guardados solo en ese teléfono.</li>
+            <li>En Ajustes &gt; Aplicaciones &gt; Administrar aplicaciones, busca MYD y desinstala la copia anterior.</li>
+            <li>Si usas Aplicaciones duales o Segundo espacio, revisa también allí y elimina la copia anterior de MYD.</li>
+            <li>Descarga de nuevo el APK desde esta página y vuelve a instalarlo.</li>
+          </ol>
+          <p>Si sigue apareciendo el conflicto, no borres otras aplicaciones: reinicia el teléfono y solicita ayuda desde MYD indicando el modelo y la versión de Android.</p>
+        </details>
+
+        <details>
+          <summary>Samsung: instalar desde Mis archivos</summary>
+          <ol>
+            <li>Abre Mis archivos &gt; Descargas y toca <strong>MYD.apk</strong>.</li>
+            <li>Si aparece “Por seguridad, tu teléfono no tiene permiso para instalar aplicaciones desconocidas”, abre Ajustes desde ese aviso y permite esta fuente para Mis archivos o el navegador que usaste.</li>
+            <li>Regresa al instalador y confirma. Después, desactiva de nuevo el permiso para esa fuente.</li>
+          </ol>
+        </details>
+
+        <details>
+          <summary>Otros teléfonos Android</summary>
+          <ol>
+            <li>Abre Descargas o la aplicación Archivos y toca <strong>MYD.apk</strong>.</li>
+            <li>Si el sistema pide permiso, busca en Ajustes “Instalar aplicaciones desconocidas” y permite temporalmente la fuente que descargó el APK.</li>
+            <li>Instala MYD y luego desactiva ese permiso.</li>
+          </ol>
+        </details>
       </section>
 
       <a class="back" href="../">Ir a la aplicación web de MYD</a>
